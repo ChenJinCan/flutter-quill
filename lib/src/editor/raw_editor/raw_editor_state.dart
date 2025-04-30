@@ -510,7 +510,7 @@ class QuillRawEditorState extends EditorState
 
     _selectionOverlay?.handlesVisible = _shouldShowSelectionHandles();
 
-    if (!_keyboardVisible) {
+    if (!_keyboardVisible && !controller.skipRequestKeyboard) {
       // This will show the keyboard for all selection changes on the
       // editor, not just changes triggered by user gestures.
       requestKeyboard();
@@ -805,6 +805,7 @@ class QuillRawEditorState extends EditorState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _shortcutActionsManager = EditorKeyboardShortcutsActionsManager(
       rawEditorState: this,
       context: context,
@@ -959,7 +960,17 @@ class QuillRawEditorState extends EditorState
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+
+    if (widget.config.focusNode.hasFocus) {
+      _showCaretOnScreen();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     closeConnectionIfNeeded();
     _keyboardVisibilitySubscription?.cancel();
     HardwareKeyboard.instance.removeHandler(_hardwareKeyboardEvent);
@@ -1159,11 +1170,14 @@ class QuillRawEditorState extends EditorState
             _disableScrollControllerAnimateOnce = false;
             return;
           }
-          _scrollController.animateTo(
+          _scrollController.jumpTo(
             math.min(offset, _scrollController.position.maxScrollExtent),
-            duration: const Duration(milliseconds: 100),
-            curve: Curves.fastOutSlowIn,
           );
+          // _scrollController.animateTo(
+          //   math.min(offset, _scrollController.position.maxScrollExtent),
+          //   duration: const Duration(milliseconds: 500),
+          //   curve: Curves.fastOutSlowIn,
+          // );
         }
       }
     });
@@ -1195,7 +1209,7 @@ class QuillRawEditorState extends EditorState
       if (!keyboardAlreadyShown) {
         /// delay 500 milliseconds for waiting keyboard show up
         Future.delayed(
-          const Duration(milliseconds: 500),
+          const Duration(milliseconds: 200),
           _showCaretOnScreen,
         );
       } else {

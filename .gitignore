@@ -77,3 +77,6 @@ example/ios/Podfile.lock
 !**/ios/**/default.perspectivev3
 # Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspec-lock.
 pubspec.lock
+
+# FVM Version Cache
+.fvm/
