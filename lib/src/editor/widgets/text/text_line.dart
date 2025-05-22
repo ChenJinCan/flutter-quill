@@ -725,21 +725,24 @@ class _TextLineState extends State<TextLine> {
 
 class EditableTextLine extends RenderObjectWidget {
   const EditableTextLine(
-      this.line,
-      this.leading,
-      this.body,
-      this.horizontalSpacing,
-      this.verticalSpacing,
-      this.textDirection,
-      this.textSelection,
-      this.color,
-      this.enableInteractiveSelection,
-      this.hasFocus,
-      this.devicePixelRatio,
-      this.cursorCont,
-      this.inlineCodeStyle,
-      this.decoration,
-      {super.key});
+    this.line,
+    this.leading,
+    this.body,
+    this.horizontalSpacing,
+    this.verticalSpacing,
+    this.textDirection,
+    this.textSelection,
+    this.color,
+    this.enableInteractiveSelection,
+    this.hasFocus,
+    this.devicePixelRatio,
+    this.cursorCont,
+    this.inlineCodeStyle,
+    this.decoration, {
+    super.key,
+    this.onSwipeLeft,
+    this.onSwipeRight,
+  });
 
   final Line line;
   final Widget? leading;
@@ -755,6 +758,8 @@ class EditableTextLine extends RenderObjectWidget {
   final CursorCont cursorCont;
   final InlineCodeStyle inlineCodeStyle;
   final BoxDecoration? decoration;
+  final VoidCallback? onSwipeLeft;
+  final VoidCallback? onSwipeRight;
 
   @override
   RenderObjectElement createElement() {
@@ -764,17 +769,20 @@ class EditableTextLine extends RenderObjectWidget {
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderEditableTextLine(
-        line,
-        textDirection,
-        textSelection,
-        enableInteractiveSelection,
-        hasFocus,
-        devicePixelRatio,
-        _getPadding(),
-        color,
-        cursorCont,
-        inlineCodeStyle,
-        decoration);
+      line,
+      textDirection,
+      textSelection,
+      enableInteractiveSelection,
+      hasFocus,
+      devicePixelRatio,
+      _getPadding(),
+      color,
+      cursorCont,
+      inlineCodeStyle,
+      decoration,
+      onSwipeLeft: onSwipeLeft,
+      onSwipeRight: onSwipeRight,
+    );
   }
 
   @override
@@ -791,7 +799,11 @@ class EditableTextLine extends RenderObjectWidget {
       ..setDevicePixelRatio(devicePixelRatio)
       ..setCursorCont(cursorCont)
       ..setInlineCodeStyle(inlineCodeStyle)
-      ..setDecoration(decoration);
+      ..setDecoration(decoration)
+      ..setSwipeCallbacks(
+        onSwipeLeft: onSwipeLeft,
+        onSwipeRight: onSwipeRight,
+      );
   }
 
   EdgeInsetsGeometry _getPadding() {
@@ -818,8 +830,10 @@ class RenderEditableTextLine extends RenderEditableBox {
     this.color,
     this.cursorCont,
     this.inlineCodeStyle,
-    this.decoration,
-  );
+    this.decoration, {
+    this.onSwipeLeft,
+    this.onSwipeRight,
+  });
 
   RenderBox? _leading;
   RenderContentProxyBox? _body;
@@ -839,6 +853,79 @@ class RenderEditableTextLine extends RenderEditableBox {
   InlineCodeStyle inlineCodeStyle;
   BoxDecoration? decoration;
   final Map<TextLineSlot, RenderBox> children = <TextLineSlot, RenderBox>{};
+
+  // 滑动手势回调
+  VoidCallback? onSwipeLeft;
+  VoidCallback? onSwipeRight;
+
+  // 滑动状态
+  bool _isSwipingLeft = false;
+  bool _isSwipingRight = false;
+  double _swipeOffset = 0.0;
+  static const double _kMaxSwipeOffset = 40.0;
+
+  /// 获取当前是否正在向左滑动
+  bool get isSwipingLeft => _isSwipingLeft;
+
+  /// 获取当前是否正在向右滑动
+  bool get isSwipingRight => _isSwipingRight;
+
+  /// 设置滑动回调函数
+  ///
+  /// [onSwipeLeft] 左滑完成时的回调
+  /// [onSwipeRight] 右滑完成时的回调
+  void setSwipeCallbacks(
+      {VoidCallback? onSwipeLeft, VoidCallback? onSwipeRight}) {
+    this.onSwipeLeft = onSwipeLeft;
+    this.onSwipeRight = onSwipeRight;
+    markNeedsPaint();
+  }
+
+  /// 开始向左滑动
+  ///
+  /// [offset] 滑动的距离，将被限制在合理范围内
+  void startSwipeLeft(double offset) {
+    if (!_isSwipingLeft) {
+      _isSwipingLeft = true;
+      _isSwipingRight = false;
+      _swipeOffset = 0.0;
+    }
+    _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+    markNeedsPaint();
+  }
+
+  /// 开始向右滑动
+  ///
+  /// [offset] 滑动的距离，将被限制在合理范围内
+  void startSwipeRight(double offset) {
+    if (!_isSwipingRight) {
+      _isSwipingRight = true;
+      _isSwipingLeft = false;
+      _swipeOffset = 0.0;
+    }
+    _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+    markNeedsPaint();
+  }
+
+  /// 结束滑动手势
+  ///
+  /// 如果滑动距离超过阈值，将触发相应的回调函数
+  /// 然后重置滑动状态
+  void endSwipe() {
+    if (_swipeOffset > _kMaxSwipeOffset * 0.5) {
+      if (_isSwipingLeft && onSwipeLeft != null) {
+        onSwipeLeft!();
+      } else if (_isSwipingRight && onSwipeRight != null) {
+        onSwipeRight!();
+      }
+    }
+
+    // 重置滑动状态
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    markNeedsPaint();
+  }
 
   Iterable<RenderBox> get _children sync* {
     if (_leading != null) {
@@ -1331,26 +1418,58 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    // 处理滑动效果
+    Offset effectiveOffset = offset;
+    if (_isSwipingLeft) {
+      effectiveOffset = offset.translate(_swipeOffset, 0);
+    } else if (_isSwipingRight) {
+      effectiveOffset = offset.translate(-_swipeOffset, 0);
+    }
+
     if (_leading != null) {
       if (textDirection == TextDirection.ltr) {
         final parentData = _leading!.parentData as BoxParentData;
-        final effectiveOffset = offset + parentData.offset;
-        context.paintChild(_leading!, effectiveOffset);
+        final leadingOffset = effectiveOffset + parentData.offset;
+        context.paintChild(_leading!, leadingOffset);
       } else {
         final parentData = _leading!.parentData as BoxParentData;
-        final effectiveOffset = offset + parentData.offset;
+        final leadingOffset = effectiveOffset + parentData.offset;
         context.paintChild(
           _leading!,
           Offset(
             size.width - _leading!.size.width,
-            effectiveOffset.dy,
+            leadingOffset.dy,
           ),
         );
       }
     }
+
+    // 绘制滑动指示器
+    if (_isSwipingLeft || _isSwipingRight) {
+      final indicatorColor = _isSwipingLeft
+          ? const Color(0xFFF44336) // 红色
+          : const Color(0xFF4CAF50); // 绿色
+      final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
+      final indicatorWidth = 4.0;
+      final indicatorRect = _isSwipingLeft
+          ? Rect.fromLTWH(
+              effectiveOffset.dx - indicatorWidth,
+              effectiveOffset.dy,
+              indicatorWidth,
+              size.height,
+            )
+          : Rect.fromLTWH(
+              effectiveOffset.dx + size.width,
+              effectiveOffset.dy,
+              indicatorWidth,
+              size.height,
+            );
+      context.canvas.drawRect(indicatorRect, indicatorPaint);
+    }
+
     final boxDecoration = decoration;
     if (boxDecoration != null) {
-      final paintRect = offset & size;
+      final paintRect = effectiveOffset & size;
       boxDecoration.createBoxPainter().paint(
             context.canvas,
             paintRect.topLeft,
@@ -1360,7 +1479,7 @@ class RenderEditableTextLine extends RenderEditableBox {
 
     if (_body != null) {
       final parentData = _body!.parentData as BoxParentData;
-      final effectiveOffset = offset + parentData.offset;
+      final bodyOffset = effectiveOffset + parentData.offset;
 
       if (inlineCodeStyle.backgroundColor != null) {
         for (final item in line.children) {
@@ -1375,7 +1494,7 @@ class RenderEditableTextLine extends RenderEditableBox {
           final rects = _body!.getBoxesForSelection(textRange);
           final paint = Paint()..color = inlineCodeStyle.backgroundColor!;
           for (final box in rects) {
-            final rect = box.toRect().translate(0, 1).shift(effectiveOffset);
+            final rect = box.toRect().translate(0, 1).shift(bodyOffset);
             if (inlineCodeStyle.radius == null) {
               final paintRect = Rect.fromLTRB(
                 rect.left - 2,
@@ -1402,16 +1521,16 @@ class RenderEditableTextLine extends RenderEditableBox {
           cursorCont.show.value &&
           containsCursor() &&
           !cursorCont.style.paintAboveText) {
-        _paintCursor(context, effectiveOffset, line.hasEmbed);
+        _paintCursor(context, bodyOffset, line.hasEmbed);
       }
 
-      context.paintChild(_body!, effectiveOffset);
+      context.paintChild(_body!, bodyOffset);
 
       if (hasFocus &&
           cursorCont.show.value &&
           containsCursor() &&
           cursorCont.style.paintAboveText) {
-        _paintCursor(context, effectiveOffset, line.hasEmbed);
+        _paintCursor(context, bodyOffset, line.hasEmbed);
       }
 
       // paint the selection on the top
@@ -1444,7 +1563,7 @@ class RenderEditableTextLine extends RenderEditableBox {
           );
         }
 
-        _paintSelection(context, effectiveOffset);
+        _paintSelection(context, bodyOffset);
       }
     }
   }
@@ -1537,6 +1656,30 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   Rect getCaretPrototype(TextPosition position) => _caretPrototype;
+
+  // 添加水平拖动支持
+  /// 开始水平拖动
+  void handleHorizontalDragStart(DragStartDetails details) {
+    // 初始化拖动，此时还不确定方向
+  }
+
+  /// 更新水平拖动
+  ///
+  /// 根据拖动方向调用相应的滑动方法
+  void handleHorizontalDragUpdate(DragUpdateDetails details) {
+    if (details.delta.dx < 0) {
+      // 向左滑动
+      startSwipeLeft(details.delta.dx.abs());
+    } else if (details.delta.dx > 0) {
+      // 向右滑动
+      startSwipeRight(details.delta.dx.abs());
+    }
+  }
+
+  /// 结束水平拖动
+  void handleHorizontalDragEnd(DragEndDetails details) {
+    endSwipe();
+  }
 }
 
 class _TextLineElement extends RenderObjectElement {

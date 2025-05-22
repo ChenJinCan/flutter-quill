@@ -84,6 +84,8 @@ class EditableTextBlock extends StatelessWidget {
     this.customStyleBuilder,
     this.customLinkPrefixes = const <String>[],
     this.customLeadingBlockBuilder,
+    this.onSwipeLeft,
+    this.onSwipeRight,
     super.key,
   });
 
@@ -115,6 +117,12 @@ class EditableTextBlock extends StatelessWidget {
   final List<String> customLinkPrefixes;
   final TextRange composingRange;
 
+  /// 左滑回调函数
+  final VoidCallback? onSwipeLeft;
+
+  /// 右滑回调函数
+  final VoidCallback? onSwipeRight;
+
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMediaQuery(context));
@@ -129,6 +137,8 @@ class EditableTextBlock extends StatelessWidget {
       decoration:
           _getDecorationForBlock(block, defaultStyles) ?? const BoxDecoration(),
       contentPadding: contentPadding,
+      onSwipeLeft: onSwipeLeft,
+      onSwipeRight: onSwipeRight,
       children: _buildChildren(
         context,
         indentLevelCounts,
@@ -429,6 +439,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     required Decoration decoration,
     super.children,
     EdgeInsets contentPadding = EdgeInsets.zero,
+    this.onSwipeLeft,
+    this.onSwipeRight,
   })  : _decoration = decoration,
         _configuration = ImageConfiguration(textDirection: textDirection),
         _savedPadding = padding,
@@ -440,6 +452,78 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   EdgeInsetsGeometry _savedPadding;
   EdgeInsets _contentPadding;
+
+  // 滑动手势回调
+  VoidCallback? onSwipeLeft;
+  VoidCallback? onSwipeRight;
+
+  // 滑动状态
+  bool _isSwipingLeft = false;
+  bool _isSwipingRight = false;
+  double _swipeOffset = 0.0;
+  static const double _kMaxSwipeOffset = 40.0;
+  static const double _kSwipeThreshold = 20.0;
+
+  /// 获取当前是否正在向左滑动
+  bool get isSwipingLeft => _isSwipingLeft;
+
+  /// 获取当前是否正在向右滑动
+  bool get isSwipingRight => _isSwipingRight;
+
+  /// 设置滑动回调函数
+  ///
+  /// [onSwipeLeft] 左滑完成时的回调
+  /// [onSwipeRight] 右滑完成时的回调
+  void setSwipeCallbacks(
+      {VoidCallback? onSwipeLeft, VoidCallback? onSwipeRight}) {
+    this.onSwipeLeft = onSwipeLeft;
+    this.onSwipeRight = onSwipeRight;
+    markNeedsPaint();
+  }
+
+  /// 开始水平拖动
+  void handleHorizontalDragStart(DragStartDetails details) {
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    markNeedsPaint();
+  }
+
+  /// 更新水平拖动
+  ///
+  /// 根据拖动方向调用相应的滑动方法
+  void handleHorizontalDragUpdate(DragUpdateDetails details) {
+    if (details.delta.dx < 0) {
+      // 向左滑动
+      _isSwipingLeft = true;
+      _isSwipingRight = false;
+      _swipeOffset =
+          (_swipeOffset + details.delta.dx.abs()).clamp(0.0, _kMaxSwipeOffset);
+    } else if (details.delta.dx > 0) {
+      // 向右滑动
+      _isSwipingRight = true;
+      _isSwipingLeft = false;
+      _swipeOffset =
+          (_swipeOffset + details.delta.dx).clamp(0.0, _kMaxSwipeOffset);
+    }
+    markNeedsPaint();
+  }
+
+  /// 结束水平拖动
+  void handleHorizontalDragEnd(DragEndDetails details) {
+    if (_swipeOffset > _kSwipeThreshold) {
+      if (_isSwipingLeft && onSwipeLeft != null) {
+        onSwipeLeft!();
+      } else if (_isSwipingRight && onSwipeRight != null) {
+        onSwipeRight!();
+      }
+    }
+
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    markNeedsPaint();
+  }
 
   set contentPadding(EdgeInsets value) {
     if (_contentPadding == value) return;
@@ -662,8 +746,17 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    _paintDecoration(context, offset);
-    defaultPaint(context, offset);
+    // 应用滑动偏移
+    final adjustedOffset = Offset(
+      offset.dx +
+          (_isSwipingLeft
+              ? -_swipeOffset
+              : (_isSwipingRight ? _swipeOffset : 0)),
+      offset.dy,
+    );
+
+    _paintDecoration(context, adjustedOffset);
+    defaultPaint(context, adjustedOffset);
   }
 
   void _paintDecoration(PaintingContext context, Offset offset) {
@@ -735,6 +828,8 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       required this.scrollBottomInset,
       required this.decoration,
       required this.contentPadding,
+      this.onSwipeLeft,
+      this.onSwipeRight,
       required super.children});
 
   final Block block;
@@ -744,6 +839,8 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
   final double scrollBottomInset;
   final Decoration decoration;
   final EdgeInsets? contentPadding;
+  final VoidCallback? onSwipeLeft;
+  final VoidCallback? onSwipeRight;
 
   EdgeInsets get _padding => EdgeInsets.only(
       left: horizontalSpacing.left,
@@ -762,6 +859,8 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       scrollBottomInset: scrollBottomInset,
       decoration: decoration,
       contentPadding: _contentPadding,
+      onSwipeLeft: onSwipeLeft,
+      onSwipeRight: onSwipeRight,
     );
   }
 
@@ -774,6 +873,10 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       ..scrollBottomInset = scrollBottomInset
       ..setPadding(_padding)
       ..decoration = decoration
-      ..contentPadding = _contentPadding;
+      ..contentPadding = _contentPadding
+      ..setSwipeCallbacks(
+        onSwipeLeft: onSwipeLeft,
+        onSwipeRight: onSwipeRight,
+      );
   }
 }
