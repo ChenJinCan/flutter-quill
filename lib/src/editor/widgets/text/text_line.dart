@@ -864,6 +864,11 @@ class RenderEditableTextLine extends RenderEditableBox {
   double _swipeOffset = 0.0;
   static const double _kMaxSwipeOffset = 40.0;
 
+  // 手势识别相关
+  Offset? _dragStartPosition;
+  double _totalDragDistance = 0.0;
+  static const double _swipeThreshold = 50.0;
+
   /// 获取当前是否正在向左滑动
   bool get isSwipingLeft => _isSwipingLeft;
 
@@ -1421,9 +1426,9 @@ class RenderEditableTextLine extends RenderEditableBox {
     // 处理滑动效果
     Offset effectiveOffset = offset;
     if (_isSwipingLeft) {
-      effectiveOffset = offset.translate(_swipeOffset, 0);
-    } else if (_isSwipingRight) {
       effectiveOffset = offset.translate(-_swipeOffset, 0);
+    } else if (_isSwipingRight) {
+      effectiveOffset = offset.translate(_swipeOffset, 0);
     }
 
     if (_leading != null) {
@@ -1622,6 +1627,50 @@ class RenderEditableTextLine extends RenderEditableBox {
   }
 
   @override
+  bool hitTestSelf(Offset position) => true;
+
+  @override
+  void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
+    assert(debugHandleEvent(event, entry));
+    if (onSwipeLeft == null && onSwipeRight == null) return;
+
+    if (event is PointerDownEvent) {
+      _dragStartPosition = event.localPosition;
+      _totalDragDistance = 0.0;
+    } else if (event is PointerMoveEvent && _dragStartPosition != null) {
+      final delta = event.localPosition - _dragStartPosition!;
+      _totalDragDistance = delta.dx.abs();
+
+      // 提供视觉反馈
+      if (_totalDragDistance > 10) {
+        if (delta.dx < 0) {
+          startSwipeLeft(_totalDragDistance);
+        } else {
+          startSwipeRight(_totalDragDistance);
+        }
+      }
+    } else if (event is PointerUpEvent && _dragStartPosition != null) {
+      final delta = event.localPosition - _dragStartPosition!;
+
+      // 判断是否达到滑动阈值
+      if (_totalDragDistance > _swipeThreshold) {
+        if (delta.dx < 0) {
+          // 左滑
+          onSwipeLeft?.call();
+        } else if (delta.dx > 0) {
+          // 右滑
+          onSwipeRight?.call();
+        }
+      }
+
+      // 重置状态
+      endSwipe();
+      _dragStartPosition = null;
+      _totalDragDistance = 0.0;
+    }
+  }
+
+  @override
   Rect getLocalRectForCaret(TextPosition position) {
     final caretOffset = getOffsetForCaret(position);
     var rect = Rect.fromLTWH(
@@ -1656,30 +1705,6 @@ class RenderEditableTextLine extends RenderEditableBox {
 
   @override
   Rect getCaretPrototype(TextPosition position) => _caretPrototype;
-
-  // 添加水平拖动支持
-  /// 开始水平拖动
-  void handleHorizontalDragStart(DragStartDetails details) {
-    // 初始化拖动，此时还不确定方向
-  }
-
-  /// 更新水平拖动
-  ///
-  /// 根据拖动方向调用相应的滑动方法
-  void handleHorizontalDragUpdate(DragUpdateDetails details) {
-    if (details.delta.dx < 0) {
-      // 向左滑动
-      startSwipeLeft(details.delta.dx.abs());
-    } else if (details.delta.dx > 0) {
-      // 向右滑动
-      startSwipeRight(details.delta.dx.abs());
-    }
-  }
-
-  /// 结束水平拖动
-  void handleHorizontalDragEnd(DragEndDetails details) {
-    endSwipe();
-  }
 }
 
 class _TextLineElement extends RenderObjectElement {

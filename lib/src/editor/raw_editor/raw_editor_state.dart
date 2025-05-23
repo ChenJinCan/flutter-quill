@@ -564,6 +564,36 @@ class QuillRawEditorState extends EditorState
     }
   }
 
+  /// 处理文本行左滑事件
+  ///
+  /// 可以在这里实现类似Craft app的左滑功能，例如：
+  /// - 显示快捷操作菜单
+  /// - 标记为完成
+  /// - 删除行等
+  void _handleTextLineSwipeLeft(Line node) {
+    // TODO: 在这里实现左滑逻辑
+    // 例如可以显示快捷操作菜单、标记完成等
+    debugPrint('Left swipe on line: ${node.toPlainText()}');
+
+    // 示例：左滑可以添加删除线格式
+    if (!widget.config.readOnly) {}
+  }
+
+  /// 处理文本行右滑事件
+  ///
+  /// 可以在这里实现类似Craft app的右滑功能，例如：
+  /// - 增加缩进
+  /// - 创建子项
+  /// - 移动到其他位置等
+  void _handleTextLineSwipeRight(Line node) {
+    // TODO: 在这里实现右滑逻辑
+    // 例如可以增加缩进、创建子项等
+    debugPrint('Right swipe on line: ${node.toPlainText()}');
+
+    // 示例：右滑可以增加缩进
+    if (!widget.config.readOnly) {}
+  }
+
   List<Widget> _buildChildren(Document doc, BuildContext context) {
     final result = <Widget>[];
     final indentLevelCounts = <int, int>{};
@@ -670,7 +700,9 @@ class QuillRawEditorState extends EditorState
         MediaQuery.devicePixelRatioOf(context),
         _cursorCont,
         _styles!.inlineCode!,
-        _getDecoration(node, _styles, attrs));
+        _getDecoration(node, _styles, attrs),
+        onSwipeLeft: () => _handleTextLineSwipeLeft(node),
+        onSwipeRight: () => _handleTextLineSwipeRight(node));
     return editableTextLine;
   }
 
