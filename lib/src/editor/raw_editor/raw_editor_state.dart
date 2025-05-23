@@ -594,6 +594,40 @@ class QuillRawEditorState extends EditorState
     if (!widget.config.readOnly) {}
   }
 
+  /// 处理文本块左滑事件
+  ///
+  /// 可以在这里实现类似Craft app的左滑功能，例如：
+  /// - 显示快捷操作菜单
+  /// - 标记为完成
+  /// - 删除块等
+  void _handleTextBlockSwipeLeft(Block node) {
+    // TODO: 在这里实现左滑逻辑
+    // 例如可以显示快捷操作菜单、标记完成等
+    debugPrint('Left swipe on block: ${node.toPlainText()}');
+
+    // 示例：左滑可以删除整个块
+    if (!widget.config.readOnly) {
+      // 可以在这里实现删除块的逻辑
+    }
+  }
+
+  /// 处理文本块右滑事件
+  ///
+  /// 可以在这里实现类似Craft app的右滑功能，例如：
+  /// - 增加缩进
+  /// - 创建子块
+  /// - 移动到其他位置等
+  void _handleTextBlockSwipeRight(Block node) {
+    // TODO: 在这里实现右滑逻辑
+    // 例如可以增加缩进、创建子块等
+    debugPrint('Right swipe on block: ${node.toPlainText()}');
+
+    // 示例：右滑可以增加缩进
+    if (!widget.config.readOnly) {
+      // 可以在这里实现增加缩进的逻辑
+    }
+  }
+
   List<Widget> _buildChildren(Document doc, BuildContext context) {
     final result = <Widget>[];
     final indentLevelCounts = <int, int>{};
@@ -651,6 +685,8 @@ class QuillRawEditorState extends EditorState
           customStyleBuilder: widget.config.customStyleBuilder,
           customLinkPrefixes: widget.config.customLinkPrefixes,
           composingRange: composingRange.value,
+          onSwipeLeft: () => _handleTextBlockSwipeLeft(node),
+          onSwipeRight: () => _handleTextBlockSwipeRight(node),
         );
         result.add(
           Directionality(
