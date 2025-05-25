@@ -20,6 +20,7 @@ import '../delegate.dart';
 import '../keyboard_listener.dart';
 import '../proxy.dart';
 import 'text_selection.dart';
+import 'swipe_manager.dart';
 
 class TextLine extends StatefulWidget {
   const TextLine({
@@ -817,7 +818,8 @@ class EditableTextLine extends RenderObjectWidget {
 
 enum TextLineSlot { leading, body }
 
-class RenderEditableTextLine extends RenderEditableBox {
+class RenderEditableTextLine extends RenderEditableBox
+    implements SwipeableComponent {
   /// Creates new editable paragraph render box.
   RenderEditableTextLine(
     this.line,
@@ -869,6 +871,58 @@ class RenderEditableTextLine extends RenderEditableBox {
   double _totalDragDistance = 0.0;
   static const double _swipeThreshold = 50.0;
 
+  // 全局滑动状态管理器
+  final SwipeStateManager _swipeManager = SwipeStateManager();
+
+  @override
+  String get componentId => 'TextLine-${line.documentOffset}';
+
+  @override
+  bool performSwipe(SwipeDirection direction, double offset) {
+    switch (direction) {
+      case SwipeDirection.left:
+        if (!_isSwipingLeft) {
+          _isSwipingLeft = true;
+          _isSwipingRight = false;
+          _swipeOffset = 0.0;
+        }
+        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+        markNeedsPaint();
+        return true;
+      case SwipeDirection.right:
+        if (!_isSwipingRight) {
+          _isSwipingRight = true;
+          _isSwipingLeft = false;
+          _swipeOffset = 0.0;
+        }
+        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+        markNeedsPaint();
+        return true;
+    }
+  }
+
+  @override
+  void resetSwipe() {
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    _dragStartPosition = null;
+    _totalDragDistance = 0.0;
+    markNeedsPaint();
+  }
+
+  @override
+  void endSwipe() {
+    if (_swipeOffset > _kMaxSwipeOffset * 0.5) {
+      if (_isSwipingLeft && onSwipeLeft != null) {
+        onSwipeLeft!();
+      } else if (_isSwipingRight && onSwipeRight != null) {
+        onSwipeRight!();
+      }
+    }
+    resetSwipe();
+  }
+
   /// 获取当前是否正在向左滑动
   bool get isSwipingLeft => _isSwipingLeft;
 
@@ -886,50 +940,14 @@ class RenderEditableTextLine extends RenderEditableBox {
     markNeedsPaint();
   }
 
-  /// 开始向左滑动
-  ///
-  /// [offset] 滑动的距离，将被限制在合理范围内
+  /// 开始向左滑动（兼容旧API）
   void startSwipeLeft(double offset) {
-    if (!_isSwipingLeft) {
-      _isSwipingLeft = true;
-      _isSwipingRight = false;
-      _swipeOffset = 0.0;
-    }
-    _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-    markNeedsPaint();
+    _swipeManager.startSwipe(this, SwipeDirection.left, offset);
   }
 
-  /// 开始向右滑动
-  ///
-  /// [offset] 滑动的距离，将被限制在合理范围内
+  /// 开始向右滑动（兼容旧API）
   void startSwipeRight(double offset) {
-    if (!_isSwipingRight) {
-      _isSwipingRight = true;
-      _isSwipingLeft = false;
-      _swipeOffset = 0.0;
-    }
-    _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-    markNeedsPaint();
-  }
-
-  /// 结束滑动手势
-  ///
-  /// 如果滑动距离超过阈值，将触发相应的回调函数
-  /// 然后重置滑动状态
-  void endSwipe() {
-    if (_swipeOffset > _kMaxSwipeOffset * 0.5) {
-      if (_isSwipingLeft && onSwipeLeft != null) {
-        onSwipeLeft!();
-      } else if (_isSwipingRight && onSwipeRight != null) {
-        onSwipeRight!();
-      }
-    }
-
-    // 重置滑动状态
-    _isSwipingLeft = false;
-    _isSwipingRight = false;
-    _swipeOffset = 0.0;
-    markNeedsPaint();
+    _swipeManager.startSwipe(this, SwipeDirection.right, offset);
   }
 
   Iterable<RenderBox> get _children sync* {
@@ -1644,9 +1662,11 @@ class RenderEditableTextLine extends RenderEditableBox {
       // 提供视觉反馈
       if (_totalDragDistance > 10) {
         if (delta.dx < 0) {
-          startSwipeLeft(_totalDragDistance);
+          _swipeManager.startSwipe(
+              this, SwipeDirection.left, _totalDragDistance);
         } else {
-          startSwipeRight(_totalDragDistance);
+          _swipeManager.startSwipe(
+              this, SwipeDirection.right, _totalDragDistance);
         }
       }
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
@@ -1663,10 +1683,8 @@ class RenderEditableTextLine extends RenderEditableBox {
         }
       }
 
-      // 重置状态
-      endSwipe();
-      _dragStartPosition = null;
-      _totalDragDistance = 0.0;
+      // 结束滑动
+      _swipeManager.endSwipe(this);
     }
   }
 

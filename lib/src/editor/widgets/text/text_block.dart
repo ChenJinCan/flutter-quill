@@ -19,6 +19,7 @@ import '../default_leading_components/leading_components.dart';
 import '../default_styles.dart';
 import '../delegate.dart';
 import '../link.dart';
+import 'swipe_manager.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
 import 'utils/text_block_utils.dart';
@@ -430,7 +431,7 @@ class EditableTextBlock extends StatelessWidget {
 }
 
 class RenderEditableTextBlock extends RenderEditableContainerBox
-    implements RenderEditableBox {
+    implements RenderEditableBox, SwipeableComponent {
   RenderEditableTextBlock({
     required Block block,
     required super.textDirection,
@@ -450,6 +451,59 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   EdgeInsetsGeometry _savedPadding;
   EdgeInsets _contentPadding;
+
+  // 滑动相关属性
+  bool _isSwipingLeft = false;
+  bool _isSwipingRight = false;
+  double _swipeOffset = 0.0;
+  static const double _kMaxSwipeOffset = 40.0;
+  Offset? _dragStartPosition;
+  double _totalDragDistance = 0.0;
+  static const double _swipeThreshold = 50.0;
+  final SwipeStateManager _swipeManager = SwipeStateManager();
+
+  @override
+  String get componentId => 'TextBlock-${container.documentOffset}';
+
+  @override
+  bool performSwipe(SwipeDirection direction, double offset) {
+    switch (direction) {
+      case SwipeDirection.left:
+        if (!_isSwipingLeft) {
+          _isSwipingLeft = true;
+          _isSwipingRight = false;
+          _swipeOffset = 0.0;
+        }
+        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+        markNeedsPaint();
+        return true;
+      case SwipeDirection.right:
+        if (!_isSwipingRight) {
+          _isSwipingRight = true;
+          _isSwipingLeft = false;
+          _swipeOffset = 0.0;
+        }
+        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
+        markNeedsPaint();
+        return true;
+    }
+  }
+
+  @override
+  void resetSwipe() {
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    _dragStartPosition = null;
+    _totalDragDistance = 0.0;
+    markNeedsPaint();
+  }
+
+  @override
+  void endSwipe() {
+    // TextBlock 的滑动结束逻辑可以在这里实现
+    resetSwipe();
+  }
 
   set contentPadding(EdgeInsets value) {
     if (_contentPadding == value) return;
@@ -672,8 +726,39 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    _paintDecoration(context, offset);
-    defaultPaint(context, offset);
+    // 处理滑动效果
+    Offset effectiveOffset = offset;
+    if (_isSwipingLeft) {
+      effectiveOffset = offset.translate(-_swipeOffset, 0);
+    } else if (_isSwipingRight) {
+      effectiveOffset = offset.translate(_swipeOffset, 0);
+    }
+
+    // 绘制滑动指示器
+    if (_isSwipingLeft || _isSwipingRight) {
+      final indicatorColor = _isSwipingLeft
+          ? const Color(0xFFF44336) // 红色
+          : const Color(0xFF4CAF50); // 绿色
+      final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
+      final indicatorWidth = 4.0;
+      final indicatorRect = _isSwipingLeft
+          ? Rect.fromLTWH(
+              effectiveOffset.dx - indicatorWidth,
+              effectiveOffset.dy,
+              indicatorWidth,
+              size.height,
+            )
+          : Rect.fromLTWH(
+              effectiveOffset.dx + size.width,
+              effectiveOffset.dy,
+              indicatorWidth,
+              size.height,
+            );
+      context.canvas.drawRect(indicatorRect, indicatorPaint);
+    }
+
+    _paintDecoration(context, effectiveOffset);
+    defaultPaint(context, effectiveOffset);
   }
 
   void _paintDecoration(PaintingContext context, Offset offset) {
@@ -702,6 +787,54 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
     return defaultHitTestChildren(result, position: position);
+  }
+
+  @override
+  bool hitTestSelf(Offset position) => true;
+
+  @override
+  void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
+    assert(debugHandleEvent(event, entry));
+
+    if (event is PointerDownEvent) {
+      _dragStartPosition = event.localPosition;
+      _totalDragDistance = 0.0;
+    } else if (event is PointerMoveEvent && _dragStartPosition != null) {
+      final delta = event.localPosition - _dragStartPosition!;
+      _totalDragDistance = delta.dx.abs();
+
+      // 检查手势位置是否在文本区域之外
+      bool shouldHandleGesture = true;
+
+      // 检查是否有子EditableTextLine在处理手势
+      if (firstChild != null) {
+        var child = firstChild;
+        while (child != null) {
+          final childParentData = child.parentData as BoxParentData;
+          final childBounds = childParentData.offset & child.size;
+          if (childBounds.contains(event.localPosition)) {
+            // 如果手势在子组件内，让子组件处理
+            shouldHandleGesture = false;
+            break;
+          }
+          child = childAfter(child);
+        }
+      }
+
+      // 只在文本外区域或没有子组件处理时才处理手势
+      if (shouldHandleGesture && _totalDragDistance > 10) {
+        if (delta.dx < 0) {
+          _swipeManager.startSwipe(
+              this, SwipeDirection.left, _totalDragDistance);
+        } else {
+          _swipeManager.startSwipe(
+              this, SwipeDirection.right, _totalDragDistance);
+        }
+      }
+    } else if (event is PointerUpEvent && _dragStartPosition != null) {
+      // 结束滑动
+      _swipeManager.endSwipe(this);
+    }
   }
 
   @override

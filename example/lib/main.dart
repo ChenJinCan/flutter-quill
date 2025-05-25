@@ -74,6 +74,18 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     // Load document
     _controller.document = Document.fromJson(kQuillDefaultSample);
+    // 添加一些示例内容来测试滑动功能
+    _controller.document.insert(0, 'Line 1: 试试向左滑动这一行\n');
+    _controller.document
+        .insert(_controller.document.length - 1, 'Line 2: 试试向右滑动这一行\n');
+    _controller.document
+        .insert(_controller.document.length - 1, 'Line 3: 只能同时滑动一行\n');
+    _controller.document
+        .insert(_controller.document.length - 1, 'Line 4: 其他行会自动复原\n');
+    _controller.document
+        .insert(_controller.document.length - 1, '\nBlock 1: 试试滑动这个文本块\n\n');
+    _controller.document
+        .insert(_controller.document.length - 1, 'Block 2: 另一个可滑动的文本块\n');
   }
 
   @override
