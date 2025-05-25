@@ -69,6 +69,9 @@ class _HomePageState extends State<HomePage> {
   final FocusNode _editorFocusNode = FocusNode();
   final ScrollController _editorScrollController = ScrollController();
 
+  // 添加一个GlobalKey来访问QuillEditorState
+  final GlobalKey<QuillEditorState> _editorKey = GlobalKey<QuillEditorState>();
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +89,118 @@ class _HomePageState extends State<HomePage> {
         .insert(_controller.document.length - 1, '\nBlock 1: 试试滑动这个文本块\n\n');
     _controller.document
         .insert(_controller.document.length - 1, 'Block 2: 另一个可滑动的文本块\n');
+  }
+
+  void _handleSwipeStart() {
+    print('滑动开始');
+  }
+
+  void _handleSwipeEnd() {
+    print('滑动结束');
+  }
+
+  void _handleComponentSelected(
+      SwipeableComponent component, SwipeDirection direction) {
+    print(
+        '组件选中: ${component.componentId} - 方向: ${direction == SwipeDirection.left ? '左滑' : '右滑'}');
+    print('内容: ${component.textContent}');
+    print('文档偏移: ${component.documentOffset}, 长度: ${component.documentLength}');
+
+    // 根据组件类型获取不同的节点信息
+    if (component.lineNode != null) {
+      print('这是一个TextLine组件，Line节点: ${component.lineNode!.runtimeType}');
+    } else if (component.block != null) {
+      print('这是一个TextBlock组件，Block节点: ${component.block!.runtimeType}');
+    }
+
+    // 在这里你可以显示自定义弹窗
+    _showCustomDialog(component, direction);
+  }
+
+  void _showCustomDialog(
+      SwipeableComponent component, SwipeDirection direction) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                direction == SwipeDirection.left
+                    ? Icons.arrow_back
+                    : Icons.arrow_forward,
+                color: direction == SwipeDirection.left
+                    ? Colors.red
+                    : Colors.green,
+              ),
+              const SizedBox(width: 8),
+              Text('${direction == SwipeDirection.left ? '左滑' : '右滑'}操作'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('组件: ${component.componentId}'),
+              const SizedBox(height: 8),
+              Text('内容: ${component.textContent}'),
+              const SizedBox(height: 8),
+              Text('文档偏移: ${component.documentOffset}'),
+              const SizedBox(height: 8),
+              Text('文档长度: ${component.documentLength}'),
+              const SizedBox(height: 8),
+              if (component.lineNode != null)
+                Text('类型: TextLine')
+              else if (component.block != null)
+                Text('类型: TextBlock'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // 关闭弹窗时清除选中状态
+                _editorKey.currentState?.clearSwipeSelection();
+              },
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // 使用QuillController进行操作示例
+                _performControllerOperation(component, direction);
+                // 清除选中状态
+                _editorKey.currentState?.clearSwipeSelection();
+              },
+              child: const Text('确认'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 使用QuillController对选中的组件进行操作的示例
+  void _performControllerOperation(
+      SwipeableComponent component, SwipeDirection direction) {
+    print('执行${direction == SwipeDirection.left ? '左滑' : '右滑'}操作');
+
+    if (direction == SwipeDirection.left) {
+      // 左滑操作示例：在组件后面插入文本
+      final insertOffset = component.documentOffset + component.documentLength;
+      _controller.document.insert(insertOffset, ' [已左滑]');
+      print('在位置 $insertOffset 插入了 "[已左滑]" 文本');
+    } else {
+      // 右滑操作示例：在组件前面插入文本
+      final insertOffset = component.documentOffset;
+      _controller.document.insert(insertOffset, '[已右滑] ');
+      print('在位置 $insertOffset 插入了 "[已右滑] " 文本');
+    }
+
+    // 你还可以做其他操作，比如：
+    // - 删除组件：_controller.document.delete(component.documentOffset, component.documentLength);
+    // - 格式化文本：_controller.formatText(component.documentOffset, component.documentLength, Attribute.bold);
+    // - 移动光标：_controller.updateSelection(TextSelection.collapsed(offset: component.documentOffset), ChangeSource.local);
   }
 
   @override
@@ -160,12 +275,16 @@ class _HomePageState extends State<HomePage> {
             ),
             Expanded(
               child: QuillEditor(
+                key: _editorKey,
                 focusNode: _editorFocusNode,
                 scrollController: _editorScrollController,
                 controller: _controller,
                 config: QuillEditorConfig(
                   placeholder: 'Start writing your notes...',
                   padding: const EdgeInsets.all(16),
+                  onSwipeStart: _handleSwipeStart,
+                  onSwipeEnd: _handleSwipeEnd,
+                  onComponentSelected: _handleComponentSelected,
                   embedBuilders: [
                     ...FlutterQuillEmbeds.editorBuilders(
                       imageEmbedConfig: QuillEditorImageEmbedConfig(

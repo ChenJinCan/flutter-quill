@@ -23,6 +23,7 @@ import 'widgets/box.dart';
 import 'widgets/cursor.dart';
 import 'widgets/delegate.dart';
 import 'widgets/float_cursor.dart';
+import 'widgets/text/swipe_manager.dart';
 import 'widgets/text/text_selection.dart';
 
 /// Base interface for editable render objects.
@@ -199,6 +200,16 @@ class QuillEditorState extends State<QuillEditor>
   /// {@macro drag_offset_notifier}
   final dragOffsetNotifier = isMobileApp ? ValueNotifier<Offset?>(null) : null;
 
+  // 滑动状态管理
+  final SwipeStateManager _swipeManager = SwipeStateManager();
+
+  // 监听器函数，用于在文本选择变化时清除滑动选中状态
+  void _onSelectionChanged() {
+    if (controller.selection.isValid) {
+      _swipeManager.clearSelection();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -221,6 +232,16 @@ class QuillEditorState extends State<QuillEditor>
         _editorKey.currentState?.hideToolbar();
       }
     });
+
+    // 监听控制器的选择变化，当有文本选择或光标变化时清除滑动选中状态
+    controller.addListener(_onSelectionChanged);
+
+    // 设置滑动管理器的回调
+    _swipeManager.setSwipeCallbacks(
+      onSwipeStart: config.onSwipeStart,
+      onSwipeEnd: config.onSwipeEnd,
+      onComponentSelected: config.onComponentSelected,
+    );
   }
 
   @override
@@ -404,6 +425,23 @@ class QuillEditorState extends State<QuillEditor>
 
   void _requestKeyboard() {
     _requireEditorCurrentState.requestKeyboard();
+  }
+
+  /// 清除当前选中的滑动组件
+  /// 用户可以在自定义弹窗关闭时调用此方法
+  void clearSwipeSelection() {
+    _swipeManager.clearSelection();
+  }
+
+  /// 获取滑动状态管理器
+  /// 用户可以通过此方法访问滑动状态
+  SwipeStateManager get swipeStateManager => _swipeManager;
+
+  @override
+  void dispose() {
+    // 移除控制器监听器
+    widget.controller.removeListener(_onSelectionChanged);
+    super.dispose();
   }
 }
 

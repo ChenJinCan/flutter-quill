@@ -20,7 +20,6 @@ import '../delegate.dart';
 import '../keyboard_listener.dart';
 import '../proxy.dart';
 import 'text_selection.dart';
-import 'swipe_manager.dart';
 
 class TextLine extends StatefulWidget {
   const TextLine({
@@ -869,13 +868,42 @@ class RenderEditableTextLine extends RenderEditableBox
   // 手势识别相关
   Offset? _dragStartPosition;
   double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 50.0;
+  static const double _swipeThreshold = 30.0;
 
   // 全局滑动状态管理器
   final SwipeStateManager _swipeManager = SwipeStateManager();
 
+  // 选中状态
+  bool _isSelected = false;
+
   @override
   String get componentId => 'TextLine-${line.documentOffset}';
+
+  @override
+  String get textContent => line.toPlainText();
+
+  @override
+  Node get documentNode => line;
+
+  @override
+  int get documentOffset => line.documentOffset;
+
+  @override
+  int get documentLength => line.length;
+
+  @override
+  Line get lineNode => line;
+
+  @override
+  Block? get block => null;
+
+  @override
+  void setSelected(bool selected) {
+    if (_isSelected != selected) {
+      _isSelected = selected;
+      markNeedsPaint();
+    }
+  }
 
   @override
   bool performSwipe(SwipeDirection direction, double offset) {
@@ -915,9 +943,9 @@ class RenderEditableTextLine extends RenderEditableBox
   void endSwipe() {
     if (_swipeOffset > _kMaxSwipeOffset * 0.5) {
       if (_isSwipingLeft && onSwipeLeft != null) {
-        onSwipeLeft!();
+        onSwipeLeft!.call();
       } else if (_isSwipingRight && onSwipeRight != null) {
-        onSwipeRight!();
+        onSwipeRight!.call();
       }
     }
     resetSwipe();
@@ -1449,6 +1477,19 @@ class RenderEditableTextLine extends RenderEditableBox
       effectiveOffset = offset.translate(_swipeOffset, 0);
     }
 
+    // 绘制选中状态背景
+    if (_isSelected) {
+      final selectedPaint = Paint()
+        ..color = const Color(0xFF2196F3).withOpacity(0.2); // 增加透明度从0.1到0.2
+      final selectedRect = Rect.fromLTWH(
+        effectiveOffset.dx,
+        effectiveOffset.dy,
+        size.width,
+        size.height,
+      );
+      context.canvas.drawRect(selectedRect, selectedPaint);
+    }
+
     if (_leading != null) {
       if (textDirection == TextDirection.ltr) {
         final parentData = _leading!.parentData as BoxParentData;
@@ -1473,7 +1514,7 @@ class RenderEditableTextLine extends RenderEditableBox
           ? const Color(0xFFF44336) // 红色
           : const Color(0xFF4CAF50); // 绿色
       final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
-      final indicatorWidth = 4.0;
+      const indicatorWidth = 4.0;
       final indicatorRect = _isSwipingLeft
           ? Rect.fromLTWH(
               effectiveOffset.dx - indicatorWidth,
@@ -1674,13 +1715,19 @@ class RenderEditableTextLine extends RenderEditableBox
 
       // 判断是否达到滑动阈值
       if (_totalDragDistance > _swipeThreshold) {
+        SwipeDirection direction;
         if (delta.dx < 0) {
           // 左滑
+          direction = SwipeDirection.left;
           onSwipeLeft?.call();
-        } else if (delta.dx > 0) {
+        } else {
           // 右滑
+          direction = SwipeDirection.right;
           onSwipeRight?.call();
         }
+
+        // 选中当前组件
+        _swipeManager.selectComponent(this, direction);
       }
 
       // 结束滑动

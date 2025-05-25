@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meta/meta.dart' show experimental;
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 
 import '../../document/nodes/node.dart';
 import '../../toolbar/theme/quill_dialog_theme.dart';
@@ -20,6 +22,11 @@ import '../widgets/link.dart' hide linkPrefixes;
 import '../widgets/text/magnifier.dart';
 import '../widgets/text/utils/text_block_utils.dart';
 import 'search_config.dart';
+import '../../common/utils/platform.dart';
+import '../../controller/quill_controller.dart';
+import '../../editor/widgets/text/swipe_manager.dart';
+import '../widgets/cursor.dart';
+import '../widgets/text/text_selection.dart';
 
 // IMPORTANT For project authors: The QuillEditorConfig.copyWith()
 // should be manually updated each time we add or remove a property
@@ -86,6 +93,9 @@ class QuillEditorConfig {
     this.readOnlyMouseCursor = SystemMouseCursors.text,
     this.onPerformAction,
     @experimental this.customLeadingBlockBuilder,
+    this.onSwipeStart,
+    this.onSwipeEnd,
+    this.onComponentSelected,
   });
 
   @experimental
@@ -471,6 +481,16 @@ class QuillEditorConfig {
   /// Called when a text input action is performed.
   final void Function(TextInputAction action)? onPerformAction;
 
+  /// 滑动开始回调
+  final VoidCallback? onSwipeStart;
+
+  /// 滑动结束回调
+  final VoidCallback? onSwipeEnd;
+
+  /// 组件选中回调
+  final void Function(SwipeableComponent component, SwipeDirection direction)?
+      onComponentSelected;
+
   // IMPORTANT For project authors: The copyWith()
   // should be manually updated each time we add or remove a property
 
@@ -531,6 +551,10 @@ class QuillEditorConfig {
     void Function()? onScribbleActivated,
     EdgeInsets? scribbleAreaInsets,
     void Function(TextInputAction action)? onPerformAction,
+    VoidCallback? onSwipeStart,
+    VoidCallback? onSwipeEnd,
+    void Function(SwipeableComponent component, SwipeDirection direction)?
+        onComponentSelected,
   }) {
     return QuillEditorConfig(
       customLeadingBlockBuilder:
@@ -600,6 +624,9 @@ class QuillEditorConfig {
       onScribbleActivated: onScribbleActivated ?? this.onScribbleActivated,
       scribbleAreaInsets: scribbleAreaInsets ?? this.scribbleAreaInsets,
       onPerformAction: onPerformAction ?? this.onPerformAction,
+      onSwipeStart: onSwipeStart ?? this.onSwipeStart,
+      onSwipeEnd: onSwipeEnd ?? this.onSwipeEnd,
+      onComponentSelected: onComponentSelected ?? this.onComponentSelected,
     );
   }
 }

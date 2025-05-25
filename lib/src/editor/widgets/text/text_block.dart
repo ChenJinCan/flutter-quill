@@ -9,6 +9,7 @@ import '../../../delta/delta_diff.dart';
 import '../../../document/attribute.dart';
 import '../../../document/nodes/block.dart';
 import '../../../document/nodes/line.dart';
+import '../../../document/nodes/node.dart';
 import '../../../editor_toolbar_shared/color.dart';
 import '../../editor.dart';
 import '../../embed/embed_editor_builder.dart';
@@ -459,11 +460,40 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   static const double _kMaxSwipeOffset = 40.0;
   Offset? _dragStartPosition;
   double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 50.0;
+  static const double _swipeThreshold = 30.0;
   final SwipeStateManager _swipeManager = SwipeStateManager();
+
+  // 选中状态
+  bool _isSelected = false;
 
   @override
   String get componentId => 'TextBlock-${container.documentOffset}';
+
+  @override
+  String get textContent => container.toPlainText();
+
+  @override
+  Node get documentNode => container;
+
+  @override
+  int get documentOffset => container.documentOffset;
+
+  @override
+  int get documentLength => container.length;
+
+  @override
+  Line? get lineNode => null;
+
+  @override
+  Block get block => container as Block;
+
+  @override
+  void setSelected(bool selected) {
+    if (_isSelected != selected) {
+      _isSelected = selected;
+      markNeedsPaint();
+    }
+  }
 
   @override
   bool performSwipe(SwipeDirection direction, double offset) {
@@ -734,13 +764,26 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
       effectiveOffset = offset.translate(_swipeOffset, 0);
     }
 
+    // 绘制选中状态背景
+    if (_isSelected) {
+      final selectedPaint = Paint()
+        ..color = const Color(0xFF2196F3).withOpacity(0.2); // 增加透明度从0.1到0.2
+      final selectedRect = Rect.fromLTWH(
+        effectiveOffset.dx,
+        effectiveOffset.dy,
+        size.width,
+        size.height,
+      );
+      context.canvas.drawRect(selectedRect, selectedPaint);
+    }
+
     // 绘制滑动指示器
     if (_isSwipingLeft || _isSwipingRight) {
       final indicatorColor = _isSwipingLeft
           ? const Color(0xFFF44336) // 红色
           : const Color(0xFF4CAF50); // 绿色
       final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
-      final indicatorWidth = 4.0;
+      const indicatorWidth = 4.0;
       final indicatorRect = _isSwipingLeft
           ? Rect.fromLTWH(
               effectiveOffset.dx - indicatorWidth,
@@ -832,6 +875,35 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
         }
       }
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
+      final delta = event.localPosition - _dragStartPosition!;
+
+      // 判断是否达到滑动阈值且应该处理手势
+      bool shouldHandleGesture = true;
+      if (firstChild != null) {
+        var child = firstChild;
+        while (child != null) {
+          final childParentData = child.parentData as BoxParentData;
+          final childBounds = childParentData.offset & child.size;
+          if (childBounds.contains(_dragStartPosition!)) {
+            shouldHandleGesture = false;
+            break;
+          }
+          child = childAfter(child);
+        }
+      }
+
+      if (shouldHandleGesture && _totalDragDistance > _swipeThreshold) {
+        SwipeDirection direction;
+        if (delta.dx < 0) {
+          direction = SwipeDirection.left;
+        } else {
+          direction = SwipeDirection.right;
+        }
+
+        // 选中当前组件
+        _swipeManager.selectComponent(this, direction);
+      }
+
       // 结束滑动
       _swipeManager.endSwipe(this);
     }
