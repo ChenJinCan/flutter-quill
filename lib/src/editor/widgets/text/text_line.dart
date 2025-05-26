@@ -1481,13 +1481,17 @@ class RenderEditableTextLine extends RenderEditableBox
     if (_isSelected) {
       final selectedPaint = Paint()
         ..color = const Color(0xFF2196F3).withOpacity(0.2); // 增加透明度从0.1到0.2
-      final selectedRect = Rect.fromLTWH(
-        effectiveOffset.dx,
-        effectiveOffset.dy,
-        size.width,
-        size.height,
+      // 增加左右2px的padding和4px圆角
+      final selectedRRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          effectiveOffset.dx - 2.0,
+          effectiveOffset.dy,
+          size.width + 4.0,
+          size.height,
+        ),
+        const Radius.circular(4.0),
       );
-      context.canvas.drawRect(selectedRect, selectedPaint);
+      context.canvas.drawRRect(selectedRRect, selectedPaint);
     }
 
     if (_leading != null) {
