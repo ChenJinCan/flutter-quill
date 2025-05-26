@@ -445,6 +445,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
         _configuration = ImageConfiguration(textDirection: textDirection),
         _savedPadding = padding,
         _contentPadding = contentPadding,
+        _swipeManager = SwipeStateManager(),
         super(
           container: block,
           padding: padding.add(contentPadding),
@@ -461,7 +462,6 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   Offset? _dragStartPosition;
   double _totalDragDistance = 0.0;
   static const double _swipeThreshold = 30.0;
-  final SwipeStateManager _swipeManager = SwipeStateManager();
 
   // 选中状态
   bool _isSelected = false;
@@ -568,6 +568,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     _configuration = value;
     markNeedsPaint();
   }
+
+  final SwipeStateManager _swipeManager;
 
   @override
   TextRange getLineBoundary(TextPosition position) {
@@ -842,30 +844,33 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     if (event is PointerDownEvent) {
       _dragStartPosition = event.localPosition;
       _totalDragDistance = 0.0;
+
+      // 检查是否点击在任何TextLine上
+      bool hitTextLine = _isPositionOnTextLine(event.localPosition);
+      if (hitTextLine) {
+        // 如果点击在TextLine上，不处理Block级别的手势
+        return;
+      }
     } else if (event is PointerMoveEvent && _dragStartPosition != null) {
       final delta = event.localPosition - _dragStartPosition!;
       _totalDragDistance = delta.dx.abs();
 
-      // 检查手势位置是否在文本区域之外
-      bool shouldHandleGesture = true;
-
-      // 检查是否有子EditableTextLine在处理手势
-      if (firstChild != null) {
-        var child = firstChild;
-        while (child != null) {
-          final childParentData = child.parentData as BoxParentData;
-          final childBounds = childParentData.offset & child.size;
-          if (childBounds.contains(event.localPosition)) {
-            // 如果手势在子组件内，让子组件处理
-            shouldHandleGesture = false;
-            break;
-          }
-          child = childAfter(child);
-        }
+      // 检查手势是否开始在TextLine上
+      bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
+      if (startedOnTextLine) {
+        // 如果手势开始在TextLine上，不处理Block级别的滑动
+        return;
       }
 
-      // 只在文本外区域或没有子组件处理时才处理手势
-      if (shouldHandleGesture && _totalDragDistance > 10) {
+      // 检查当前位置是否在TextLine上
+      bool currentOnTextLine = _isPositionOnTextLine(event.localPosition);
+      if (currentOnTextLine) {
+        // 如果当前在TextLine上，不处理Block级别的滑动
+        return;
+      }
+
+      // 只在完全不在TextLine区域内的手势才处理Block级别的滑动
+      if (_totalDragDistance > 10) {
         if (delta.dx < 0) {
           _swipeManager.startSwipe(
               this, SwipeDirection.left, _totalDragDistance);
@@ -877,22 +882,14 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
       final delta = event.localPosition - _dragStartPosition!;
 
-      // 判断是否达到滑动阈值且应该处理手势
-      bool shouldHandleGesture = true;
-      if (firstChild != null) {
-        var child = firstChild;
-        while (child != null) {
-          final childParentData = child.parentData as BoxParentData;
-          final childBounds = childParentData.offset & child.size;
-          if (childBounds.contains(_dragStartPosition!)) {
-            shouldHandleGesture = false;
-            break;
-          }
-          child = childAfter(child);
-        }
+      // 检查手势是否开始在TextLine上
+      bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
+      if (startedOnTextLine) {
+        // 如果手势开始在TextLine上，不处理Block级别的滑动
+        return;
       }
 
-      if (shouldHandleGesture && _totalDragDistance > _swipeThreshold) {
+      if (_totalDragDistance > _swipeThreshold) {
         SwipeDirection direction;
         if (delta.dx < 0) {
           direction = SwipeDirection.left;
@@ -907,6 +904,22 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
       // 结束滑动
       _swipeManager.endSwipe(this);
     }
+  }
+
+  /// 检查位置是否在任何TextLine上
+  bool _isPositionOnTextLine(Offset position) {
+    if (firstChild == null) return false;
+
+    var child = firstChild;
+    while (child != null) {
+      final childParentData = child.parentData as BoxParentData;
+      final childBounds = childParentData.offset & child.size;
+      if (childBounds.contains(position)) {
+        return true;
+      }
+      child = childAfter(child);
+    }
+    return false;
   }
 
   @override
