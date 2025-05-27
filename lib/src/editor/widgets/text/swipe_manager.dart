@@ -24,14 +24,14 @@ class SwipeStateManager {
   VoidCallback? _onSwipeEnd;
 
   /// 组件选中回调
-  void Function(SwipeableComponent component, SwipeDirection direction)?
+  void Function(Line? line, Block? block, SwipeDirection direction)?
       _onComponentSelected;
 
   /// 设置滑动事件回调
   void setSwipeCallbacks({
     VoidCallback? onSwipeStart,
     VoidCallback? onSwipeEnd,
-    void Function(SwipeableComponent component, SwipeDirection direction)?
+    void Function(Line? line, Block? block, SwipeDirection direction)?
         onComponentSelected,
   }) {
     _onSwipeStart = onSwipeStart;
@@ -82,7 +82,7 @@ class SwipeStateManager {
     component.setSelected(true);
 
     // 触发选中回调
-    _onComponentSelected?.call(component, direction);
+    _onComponentSelected?.call(component.lineNode, component.block, direction);
   }
 
   /// 清除选中状态

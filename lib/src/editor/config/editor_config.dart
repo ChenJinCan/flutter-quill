@@ -9,6 +9,7 @@ import 'package:meta/meta.dart' show experimental;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
+import '../../../flutter_quill.dart' show Block, Line;
 import '../../document/nodes/node.dart';
 import '../../toolbar/theme/quill_dialog_theme.dart';
 import '../embed/embed_editor_builder.dart';
@@ -488,7 +489,7 @@ class QuillEditorConfig {
   final VoidCallback? onSwipeEnd;
 
   /// 组件选中回调
-  final void Function(SwipeableComponent component, SwipeDirection direction)?
+  final void Function(Line? line, Block? block, SwipeDirection direction)?
       onComponentSelected;
 
   // IMPORTANT For project authors: The copyWith()
@@ -553,7 +554,7 @@ class QuillEditorConfig {
     void Function(TextInputAction action)? onPerformAction,
     VoidCallback? onSwipeStart,
     VoidCallback? onSwipeEnd,
-    void Function(SwipeableComponent component, SwipeDirection direction)?
+    void Function(Line? line, Block? block, SwipeDirection direction)?
         onComponentSelected,
   }) {
     return QuillEditorConfig(
