@@ -9,6 +9,21 @@ import 'package:flutter_quill_example/quill_delta_sample.dart';
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:path/path.dart' as path;
 
+// Define SwipeDirection enum and SwipeStateManager for demo
+enum SwipeDirection { left, right }
+
+// Mock SwipeStateManager for now
+class SwipeStateManager {
+  static final SwipeStateManager _instance = SwipeStateManager._internal();
+  factory SwipeStateManager() => _instance;
+  SwipeStateManager._internal();
+
+  void clearSelection() {
+    // Mock implementation
+    print('清除选中状态');
+  }
+}
+
 void main() => runApp(const MainApp());
 
 class MainApp extends StatelessWidget {
@@ -100,25 +115,41 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleComponentSelected(
-      SwipeableComponent component, SwipeDirection direction) {
+      Line? line, Block? block, SwipeDirection direction) {
+    final component = line ?? block;
+    if (component == null) return;
+
+    final componentId = line != null
+        ? 'TextLine-${line.documentOffset}'
+        : 'TextBlock-${block!.documentOffset}';
+    final textContent = component.toPlainText();
+    final documentOffset = component.documentOffset;
+    final documentLength = component.length;
+
     print(
-        '组件选中: ${component.componentId} - 方向: ${direction == SwipeDirection.left ? '左滑' : '右滑'}');
-    print('内容: ${component.textContent}');
-    print('文档偏移: ${component.documentOffset}, 长度: ${component.documentLength}');
+        '组件选中: $componentId - 方向: ${direction == SwipeDirection.left ? '左滑' : '右滑'}');
+    print('内容: $textContent');
+    print('文档偏移: $documentOffset, 长度: $documentLength');
 
     // 根据组件类型获取不同的节点信息
-    if (component.lineNode != null) {
-      print('这是一个TextLine组件，Line节点: ${component.lineNode!.runtimeType}');
-    } else if (component.block != null) {
-      print('这是一个TextBlock组件，Block节点: ${component.block!.runtimeType}');
+    if (line != null) {
+      print('这是一个TextLine组件，Line节点: ${line.runtimeType}');
+    } else if (block != null) {
+      print('这是一个TextBlock组件，Block节点: ${block.runtimeType}');
     }
 
     // 在这里你可以显示自定义弹窗
     _showCustomDialog(component, direction);
   }
 
-  void _showCustomDialog(
-      SwipeableComponent component, SwipeDirection direction) {
+  void _showCustomDialog(Node component, SwipeDirection direction) {
+    final componentId = component is Line
+        ? 'TextLine-${component.documentOffset}'
+        : 'TextBlock-${component.documentOffset}';
+    final textContent = component.toPlainText();
+    final documentOffset = component.documentOffset;
+    final documentLength = component.length;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -141,17 +172,17 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('组件: ${component.componentId}'),
+              Text('组件: $componentId'),
               const SizedBox(height: 8),
-              Text('内容: ${component.textContent}'),
+              Text('内容: $textContent'),
               const SizedBox(height: 8),
-              Text('文档偏移: ${component.documentOffset}'),
+              Text('文档偏移: $documentOffset'),
               const SizedBox(height: 8),
-              Text('文档长度: ${component.documentLength}'),
+              Text('文档长度: $documentLength'),
               const SizedBox(height: 8),
-              if (component.lineNode != null)
+              if (component is Line)
                 Text('类型: TextLine')
-              else if (component.block != null)
+              else if (component is Block)
                 Text('类型: TextBlock'),
             ],
           ),
@@ -160,7 +191,7 @@ class _HomePageState extends State<HomePage> {
               onPressed: () {
                 Navigator.of(context).pop();
                 // 关闭弹窗时清除选中状态
-                _editorKey.currentState?.clearSwipeSelection();
+                SwipeStateManager().clearSelection();
               },
               child: const Text('取消'),
             ),
@@ -170,7 +201,7 @@ class _HomePageState extends State<HomePage> {
                 // 使用QuillController进行操作示例
                 _performControllerOperation(component, direction);
                 // 清除选中状态
-                _editorKey.currentState?.clearSwipeSelection();
+                SwipeStateManager().clearSelection();
               },
               child: const Text('确认'),
             ),
@@ -181,13 +212,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 使用QuillController对选中的组件进行操作的示例
-  void _performControllerOperation(
-      SwipeableComponent component, SwipeDirection direction) {
+  void _performControllerOperation(Node component, SwipeDirection direction) {
     print('执行${direction == SwipeDirection.left ? '左滑' : '右滑'}操作');
 
     if (direction == SwipeDirection.left) {
       // 左滑操作示例：在组件后面插入文本
-      final insertOffset = component.documentOffset + component.documentLength;
+      final insertOffset = component.documentOffset + component.length;
       _controller.document.insert(insertOffset, ' [已左滑]');
       print('在位置 $insertOffset 插入了 "[已左滑]" 文本');
     } else {
@@ -282,9 +312,6 @@ class _HomePageState extends State<HomePage> {
                 config: QuillEditorConfig(
                   placeholder: 'Start writing your notes...',
                   padding: const EdgeInsets.all(16),
-                  onSwipeStart: _handleSwipeStart,
-                  onSwipeEnd: _handleSwipeEnd,
-                  onComponentSelected: _handleComponentSelected,
                   embedBuilders: [
                     ...FlutterQuillEmbeds.editorBuilders(
                       imageEmbedConfig: QuillEditorImageEmbedConfig(

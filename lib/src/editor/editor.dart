@@ -23,6 +23,7 @@ import 'widgets/box.dart';
 import 'widgets/cursor.dart';
 import 'widgets/delegate.dart';
 import 'widgets/float_cursor.dart';
+import 'widgets/text/drag_aware_scroll_physics.dart';
 import 'widgets/text/swipe_manager.dart';
 import 'widgets/text/text_selection.dart';
 
@@ -281,6 +282,12 @@ class QuillEditorState extends State<QuillEditor>
     final showSelectionToolbar =
         config.enableInteractiveSelection && config.enableSelectionToolbar;
 
+    // 创建支持拖拽时禁用滚动的ScrollPhysics
+    final dragAwareScrollPhysics = DragAwareScrollPhysics(
+      parent: config.scrollPhysics,
+      swipeManager: _swipeManager,
+    );
+
     final child = QuillRawEditor(
       key: _editorKey,
       controller: controller,
@@ -327,7 +334,7 @@ class QuillEditorState extends State<QuillEditor>
         selectionCtrls: config.textSelectionControls ?? textSelectionControls,
         keyboardAppearance: config.keyboardAppearance,
         enableInteractiveSelection: config.enableInteractiveSelection,
-        scrollPhysics: config.scrollPhysics,
+        scrollPhysics: dragAwareScrollPhysics, // 使用支持拖拽感知的滚动物理特性
         embedBuilder: _getEmbedBuilder,
         textSpanBuilder: config.textSpanBuilder,
         quillMagnifierBuilder: config.quillMagnifierBuilder,

@@ -38,6 +38,8 @@ import 'raw_editor_render_object.dart';
 import 'raw_editor_state_selection_delegate_mixin.dart';
 import 'raw_editor_state_text_input_client_mixin.dart';
 import 'scribble_focusable.dart';
+import '../widgets/text/swipe_manager.dart';
+import '../widgets/text/drag_sort_overlay.dart';
 
 class QuillRawEditorState extends EditorState
     with
@@ -892,6 +894,9 @@ class QuillRawEditorState extends EditorState
       tickerProvider: this,
     );
 
+    // 设置拖拽排序回调
+    _setupDragSortCallbacks();
+
     // Floating cursor
     _floatingCursorResetController = AnimationController(vsync: this);
     _floatingCursorResetController.addListener(onFloatingCursorResetTick);
@@ -930,6 +935,55 @@ class QuillRawEditorState extends EditorState
       // Focus
       widget.config.focusNode.addListener(_handleFocusChanged);
     }
+  }
+
+  /// 设置拖拽排序回调
+  void _setupDragSortCallbacks() {
+    final swipeManager = SwipeStateManager();
+
+    // 设置拖拽回调
+    swipeManager.setDragCallbacks(
+      onDragStart: () {
+        // 拖拽开始时的处理
+        debugPrint('拖拽排序开始');
+      },
+      onDragUpdate: (globalPosition, draggingComponent) {
+        // 显示或更新拖拽覆盖层
+        if (mounted && context.mounted) {
+          DragSortOverlay.show(
+            context: context,
+            component: draggingComponent,
+            controller: controller,
+            editorKey: _editorKey,
+            initialGlobalPosition: globalPosition,
+          );
+        }
+
+        // 更新覆盖层位置
+        DragSortOverlay.updatePosition(globalPosition);
+
+        debugPrint('拖拽更新: ${globalPosition.dx}, ${globalPosition.dy}');
+      },
+      onDragEnd: (draggingComponent) {
+        // 拖拽结束时隐藏覆盖层
+        DragSortOverlay.hide();
+        debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
+      },
+    );
+
+    // 设置滑动回调
+    swipeManager.setSwipeCallbacks(
+      onSwipeStart: () {
+        debugPrint('开始滑动');
+      },
+      onSwipeEnd: () {
+        debugPrint('结束滑动');
+      },
+      onComponentSelected: (line, block, direction) {
+        debugPrint(
+            '选中组件: ${line?.toPlainText() ?? block?.toPlainText()}, 方向: $direction');
+      },
+    );
   }
 
   // KeyboardVisibilityController only checks for keyboards that

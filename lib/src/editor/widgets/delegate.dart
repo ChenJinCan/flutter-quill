@@ -365,6 +365,9 @@ class EditorTextSelectionGestureDetectorBuilder {
     ValueNotifier<Offset?>? dragOffsetNotifier,
     QuillMagnifierBuilder? quillMagnifierBuilder,
   }) {
+    // 完全禁用长按手势识别器，避免与自定义手势冲突
+    // 无论编辑模式还是只读模式都不注册长按手势回调
+
     return EditorTextSelectionGestureDetector(
       key: key,
       onTapDown: onTapDown,
@@ -372,9 +375,10 @@ class EditorTextSelectionGestureDetectorBuilder {
       onForcePressEnd: delegate.forcePressEnabled ? onForcePressEnd : null,
       onSingleTapUp: onSingleTapUp,
       onSingleTapCancel: onSingleTapCancel,
-      onSingleLongTapStart: onSingleLongTapStart,
-      onSingleLongTapMoveUpdate: onSingleLongTapMoveUpdate,
-      onSingleLongTapEnd: onSingleLongTapEnd,
+      // 完全禁用长按手势回调，让底层的handleEvent处理所有长按事件
+      onSingleLongTapStart: null,
+      onSingleLongTapMoveUpdate: null,
+      onSingleLongTapEnd: null,
       onDoubleTapDown: onDoubleTapDown,
       onSecondarySingleTapUp: onSecondarySingleTapUp,
       onDragSelectionStart: onDragSelectionStart,

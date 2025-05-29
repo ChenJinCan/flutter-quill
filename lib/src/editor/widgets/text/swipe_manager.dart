@@ -5,7 +5,7 @@ import '../../../document/nodes/line.dart';
 import '../../../document/nodes/block.dart';
 
 /// 全局滑动状态管理器
-/// 确保一次只能有一个组件处于滑动状态
+/// 确保一次只能有一个组件处于滑动状态，并管理滚动冲突
 class SwipeStateManager {
   static final SwipeStateManager _instance = SwipeStateManager._internal();
   factory SwipeStateManager() => _instance;
@@ -17,6 +17,15 @@ class SwipeStateManager {
   /// 当前选中的组件
   SwipeableComponent? _selectedComponent;
 
+  /// 当前正在拖拽的组件
+  SwipeableComponent? _currentDraggingComponent;
+
+  /// 拖拽排序相关回调
+  VoidCallback? _onDragStart;
+  void Function(Offset globalPosition, SwipeableComponent draggingComponent)?
+      _onDragUpdate;
+  void Function(SwipeableComponent draggingComponent)? _onDragEnd;
+
   /// 滑动开始回调
   VoidCallback? _onSwipeStart;
 
@@ -26,6 +35,11 @@ class SwipeStateManager {
   /// 组件选中回调
   void Function(Line? line, Block? block, SwipeDirection direction)?
       _onComponentSelected;
+
+  /// 检查是否应该阻止滚动事件（拖拽时）
+  bool shouldPreventScroll() {
+    return _currentDraggingComponent != null;
+  }
 
   /// 设置滑动事件回调
   void setSwipeCallbacks({
@@ -38,6 +52,62 @@ class SwipeStateManager {
     _onSwipeEnd = onSwipeEnd;
     _onComponentSelected = onComponentSelected;
   }
+
+  /// 设置拖拽排序回调
+  void setDragCallbacks({
+    VoidCallback? onDragStart,
+    void Function(Offset globalPosition, SwipeableComponent draggingComponent)?
+        onDragUpdate,
+    void Function(SwipeableComponent draggingComponent)? onDragEnd,
+  }) {
+    _onDragStart = onDragStart;
+    _onDragUpdate = onDragUpdate;
+    _onDragEnd = onDragEnd;
+  }
+
+  /// 开始拖拽排序
+  bool startDrag(SwipeableComponent component) {
+    // 如果已有其他组件在拖拽，先结束它们
+    if (_currentDraggingComponent != null &&
+        _currentDraggingComponent != component) {
+      _currentDraggingComponent!.endDrag();
+    }
+
+    _currentDraggingComponent = component;
+    debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
+    _onDragStart?.call();
+    return true;
+  }
+
+  /// 更新拖拽位置
+  void updateDrag(Offset globalPosition) {
+    if (_currentDraggingComponent != null) {
+      debugPrint(
+          'SwipeStateManager.updateDrag: 更新拖拽位置 $globalPosition, component=${_currentDraggingComponent!.componentId}');
+      debugPrint(
+          'SwipeStateManager.updateDrag: _onDragUpdate 回调是否为null: ${_onDragUpdate == null}');
+
+      // 调用覆盖层更新位置
+      // 需要导入 drag_sort_overlay.dart
+
+      _onDragUpdate?.call(globalPosition, _currentDraggingComponent!);
+    } else {
+      debugPrint('SwipeStateManager.updateDrag: 没有正在拖拽的组件');
+    }
+  }
+
+  /// 结束拖拽排序
+  void endDrag() {
+    if (_currentDraggingComponent != null) {
+      final component = _currentDraggingComponent!;
+      _currentDraggingComponent = null;
+      component.endDrag();
+      _onDragEnd?.call(component);
+    }
+  }
+
+  /// 检查是否正在拖拽
+  bool get isDragging => _currentDraggingComponent != null;
 
   /// 开始滑动
   /// 如果已有其他组件在滑动，会先重置它们
@@ -99,6 +169,10 @@ class SwipeStateManager {
       _currentSwipingComponent!.resetSwipe();
       _currentSwipingComponent = null;
     }
+    if (_currentDraggingComponent != null) {
+      _currentDraggingComponent!.endDrag();
+      _currentDraggingComponent = null;
+    }
     clearSelection();
   }
 
@@ -107,6 +181,9 @@ class SwipeStateManager {
 
   /// 获取当前选中的组件
   SwipeableComponent? get selectedComponent => _selectedComponent;
+
+  /// 获取当前正在拖拽的组件
+  SwipeableComponent? get currentDraggingComponent => _currentDraggingComponent;
 }
 
 /// 滑动方向枚举
@@ -125,6 +202,12 @@ abstract class SwipeableComponent {
 
   /// 设置选中状态
   void setSelected(bool selected);
+
+  /// 开始拖拽排序
+  bool startDrag();
+
+  /// 结束拖拽排序
+  void endDrag();
 
   /// 获取组件标识符（用于调试）
   String get componentId;

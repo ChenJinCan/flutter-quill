@@ -535,6 +535,20 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     resetSwipe();
   }
 
+  @override
+  bool startDrag() {
+    // TextBlock的拖拽排序功能
+    // 可以在这里实现拖拽排序的开始逻辑
+    markNeedsPaint();
+    return true;
+  }
+
+  @override
+  void endDrag() {
+    // TextBlock的拖拽排序结束逻辑
+    markNeedsPaint();
+  }
+
   set contentPadding(EdgeInsets value) {
     if (_contentPadding == value) return;
     _contentPadding = value;
