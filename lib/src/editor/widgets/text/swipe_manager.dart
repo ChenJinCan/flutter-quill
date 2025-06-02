@@ -73,6 +73,19 @@ class SwipeStateManager {
       _currentDraggingComponent!.endDrag();
     }
 
+    // 如果有其他组件在滑动，先重置它们
+    if (_currentSwipingComponent != null &&
+        _currentSwipingComponent != component) {
+      _currentSwipingComponent!.resetSwipe();
+      _currentSwipingComponent = null;
+    }
+
+    // 清除之前的选中状态（如果不是当前组件）
+    if (_selectedComponent != null && _selectedComponent != component) {
+      _selectedComponent!.setSelected(false);
+      _selectedComponent = null;
+    }
+
     _currentDraggingComponent = component;
     debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
     _onDragStart?.call();
@@ -113,10 +126,20 @@ class SwipeStateManager {
   /// 如果已有其他组件在滑动，会先重置它们
   bool startSwipe(
       SwipeableComponent component, SwipeDirection direction, double offset) {
-    // 如果有其他组件正在滑动，先重置它们
+    // 如果有组件正在拖拽，不允许开始滑动
+    if (_currentDraggingComponent != null) {
+      return false;
+    }
+
     if (_currentSwipingComponent != null &&
         _currentSwipingComponent != component) {
       _currentSwipingComponent!.resetSwipe();
+    }
+
+    // 清除之前的选中状态（如果不是当前组件）
+    if (_selectedComponent != null && _selectedComponent != component) {
+      _selectedComponent!.setSelected(false);
+      _selectedComponent = null;
     }
 
     // 设置当前滑动组件
@@ -145,6 +168,18 @@ class SwipeStateManager {
     // 清除之前的选中状态
     if (_selectedComponent != null && _selectedComponent != component) {
       _selectedComponent!.setSelected(false);
+    }
+
+    // 清除当前滑动状态
+    if (_currentSwipingComponent != null) {
+      _currentSwipingComponent!.resetSwipe();
+      _currentSwipingComponent = null;
+    }
+
+    // 清除当前拖拽状态
+    if (_currentDraggingComponent != null) {
+      _currentDraggingComponent!.endDrag();
+      _currentDraggingComponent = null;
     }
 
     // 设置新的选中组件

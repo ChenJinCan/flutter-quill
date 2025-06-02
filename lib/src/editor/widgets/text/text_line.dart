@@ -1555,61 +1555,20 @@ class RenderEditableTextLine extends RenderEditableBox
 
     // 绘制拖拽状态背景和阴影
     if (_isDragging) {
-      // 拖拽时的阴影效果
-      final shadowPaint = Paint()
-        ..color = Colors.black.withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-
-      final shadowRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx + 2.0,
-          effectiveOffset.dy + 2.0,
-          size.width,
-          size.height,
-        ),
-        const Radius.circular(8.0),
-      );
-      context.canvas.drawRRect(shadowRect, shadowPaint);
-
-      // 拖拽时的背景色
+      // 拖拽时的背景色 - 与选中状态保持一致
       final dragPaint = Paint()
-        ..color = const Color(0xFF1976D2).withOpacity(0.8); // 蓝色背景
+        ..color = const Color(0xFF2196F3).withOpacity(0.2);
 
       final dragRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(
-          effectiveOffset.dx,
+          effectiveOffset.dx - 2.0,
           effectiveOffset.dy,
-          size.width,
+          size.width + 4.0,
           size.height,
         ),
-        const Radius.circular(8.0),
+        const Radius.circular(4.0),
       );
       context.canvas.drawRRect(dragRRect, dragPaint);
-
-      // 拖拽指示器（左右两侧的竖线）
-      final indicatorPaint = Paint()
-        ..color = Colors.white.withOpacity(0.8)
-        ..strokeWidth = 3.0;
-
-      // 左侧指示器
-      for (int i = 0; i < 3; i++) {
-        final x = effectiveOffset.dx + 8.0 + i * 6.0;
-        context.canvas.drawLine(
-          Offset(x, effectiveOffset.dy + size.height * 0.3),
-          Offset(x, effectiveOffset.dy + size.height * 0.7),
-          indicatorPaint,
-        );
-      }
-
-      // 右侧指示器
-      for (int i = 0; i < 3; i++) {
-        final x = effectiveOffset.dx + size.width - 26.0 + i * 6.0;
-        context.canvas.drawLine(
-          Offset(x, effectiveOffset.dy + size.height * 0.3),
-          Offset(x, effectiveOffset.dy + size.height * 0.7),
-          indicatorPaint,
-        );
-      }
     }
 
     // 绘制选中状态背景

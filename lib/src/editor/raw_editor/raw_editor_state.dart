@@ -956,6 +956,7 @@ class QuillRawEditorState extends EditorState
             controller: controller,
             editorKey: _editorKey,
             initialGlobalPosition: globalPosition,
+            scrollController: _scrollController,
           );
         }
 
