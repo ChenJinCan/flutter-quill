@@ -128,7 +128,7 @@ class DragSortOverlay {
 
     // 计算实际可用区域
     final effectiveTop = safeAreaTop + appBarHeight;
-    final effectiveBottom = screenHeight - safeAreaBottom;
+    final effectiveBottom = screenHeight;
 
     bool shouldScrollUp = position.dy < effectiveTop + _edgeZone;
     bool shouldScrollDown = position.dy > effectiveBottom - _edgeZone;
