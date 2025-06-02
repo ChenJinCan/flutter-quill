@@ -30,7 +30,7 @@ class DragSortOverlay {
   // 边缘滚动相关
   static Timer? _scrollTimer;
   static bool _isScrolling = false;
-  static const double _edgeZone = 100.0; // 边缘检测区域
+  static const double _edgeZone = 150.0; // 边缘检测区域
   static const double _scrollSpeed = 200.0; // 滚动速度（像素/秒）
 
   // 当前拖拽位置
@@ -145,23 +145,13 @@ class DragSortOverlay {
     if (_isScrolling) return;
 
     _isScrolling = true;
-    _scrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _scrollTimer = Timer.periodic(const Duration(milliseconds: 8), (timer) {
       if (_scrollController == null || !_scrollController!.hasClients) {
         _stopEdgeScroll();
         return;
       }
 
-      final currentOffset = _scrollController!.offset;
-      final maxOffset = _scrollController!.position.maxScrollExtent;
-      final scrollDelta = _scrollSpeed * 0.016 * direction; // 60fps
-
-      double newOffset = (currentOffset + scrollDelta).clamp(0.0, maxOffset);
-
-      if (newOffset != currentOffset) {
-        _scrollController!.jumpTo(newOffset);
-      }
-
-      // 重新检查当前位置是否还在边缘
+      // 重新检查当前位置是否还在边缘 - 这是唯一的停止条件
       if (_currentPosition != null && _context != null) {
         final mediaQuery = MediaQuery.of(_context!);
         final screenHeight = mediaQuery.size.height;
@@ -177,8 +167,38 @@ class DragSortOverlay {
 
         if (!stillInEdge) {
           _stopEdgeScroll();
+          return;
         }
       }
+
+      // 持续滚动，不管是否到达边界
+      final currentOffset = _scrollController!.offset;
+      final maxOffset = _scrollController!.position.maxScrollExtent;
+      final scrollDelta = _scrollSpeed * 0.032 * direction; // 125fps
+
+      double targetOffset = currentOffset + scrollDelta;
+
+      // 确定实际的滚动目标位置
+      double newOffset;
+      if (direction < 0) {
+        // 向上滚动：目标是0
+        newOffset = targetOffset < 0 ? 0 : targetOffset;
+      } else {
+        // 向下滚动：目标是maxOffset
+        newOffset = targetOffset > maxOffset ? maxOffset : targetOffset;
+      }
+
+      // 总是尝试滚动，即使已经在边界
+      try {
+        _scrollController!.jumpTo(newOffset);
+      } catch (e) {
+        // 滚动失败才停止
+        _stopEdgeScroll();
+        return;
+      }
+
+      // 注意：不再检查 newOffset != currentOffset
+      // 因为即使到达边界，只要拖拽还在边缘区域，就应该保持滚动状态
     });
   }
 
