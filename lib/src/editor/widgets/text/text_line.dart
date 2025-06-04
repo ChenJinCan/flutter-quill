@@ -869,13 +869,21 @@ class RenderEditableTextLine extends RenderEditableBox
   // 手势识别相关
   Offset? _dragStartPosition;
   double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 30.0;
+  static const double _swipeThreshold = 60.0; // 增加滑动阈值从30到60
+  static const double _moveThreshold = 15.0; // 增加移动阈值从10到15
+  static const double _horizontalToVerticalRatio = 2.0; // 水平移动必须是垂直移动的2倍以上
+  static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
+
+  // 滑动方向一致性检查
+  List<double> _horizontalMovements = []; // 记录最近几次的水平移动
+  int _consistentHorizontalCount = 0; // 连续相同方向的计数
 
   // 长按拖拽相关属性
   bool _isLongPressing = false;
   bool _isDragging = false;
   Timer? _longPressTimer;
-  static const Duration _longPressDuration = Duration(milliseconds: 500);
+  static const Duration _longPressDuration =
+      Duration(milliseconds: 600); // 增加长按时间从500ms到800ms
   VoidCallback? _onLongPressStart;
   VoidCallback? _onDragEnd;
 
@@ -945,6 +953,8 @@ class RenderEditableTextLine extends RenderEditableBox
     _swipeOffset = 0.0;
     _dragStartPosition = null;
     _totalDragDistance = 0.0;
+    _horizontalMovements.clear();
+    _consistentHorizontalCount = 0;
     markNeedsPaint();
   }
 
@@ -1797,15 +1807,25 @@ class RenderEditableTextLine extends RenderEditableBox
       return;
     }
 
-    // 如果全局正在拖拽（包括其他组件），消费此事件避免滚动冲突
-    if (_swipeManager.shouldPreventScroll() && event is PointerMoveEvent) {
-      // 但是如果是当前组件在拖拽，则继续处理
-      if (_isDragging) {
-        debugPrint('当前组件正在拖拽，继续处理移动事件');
+    // 检查是否有光标显示在当前TextLine上 - 如果有则禁用长按拖拽
+    final hasCursorOnThisLine = hasFocus &&
+        cursorCont.show.value &&
+        containsCursor() &&
+        textSelection.isCollapsed;
+
+    debugPrint(
+        '光标状态检查: hasFocus=$hasFocus, cursorShow=${cursorCont.show.value}, containsCursor=${containsCursor()}, isCollapsed=${textSelection.isCollapsed}, hasCursorOnThisLine=$hasCursorOnThisLine');
+
+    // 如果全局正在拖拽或滑动，消费此事件避免滚动冲突
+    if (_swipeManager.shouldPreventOtherGestures() &&
+        event is PointerMoveEvent) {
+      // 但是如果是当前组件在拖拽或滑动，则继续处理
+      if (_isDragging || _isSwipingLeft || _isSwipingRight) {
+        debugPrint('当前组件正在操作，继续处理移动事件');
         // 继续处理，不return
       } else {
         // 消费掉移动事件，防止触发滚动
-        debugPrint('阻止滚动，消费移动事件');
+        debugPrint('阻止滚动，消费移动事件 - 其他组件正在操作');
         return;
       }
     }
@@ -1813,60 +1833,96 @@ class RenderEditableTextLine extends RenderEditableBox
     if (event is PointerDownEvent) {
       _dragStartPosition = event.localPosition;
       _totalDragDistance = 0.0;
+      _horizontalMovements.clear();
+      _consistentHorizontalCount = 0;
 
-      // 启动长按检测（无论编辑模式还是只读模式）
-      // 由于已经在上层禁用了LongPressGestureRecognizer，这里可以安全处理
-      _startLongPressDetection(event.localPosition);
-      debugPrint('开始长按检测: ${event.localPosition}');
+      // 只有在没有光标显示时才启动长按检测
+      if (!hasCursorOnThisLine) {
+        _startLongPressDetection(event.localPosition);
+        debugPrint('开始长按检测: ${event.localPosition}');
+      } else {
+        debugPrint('有光标显示，跳过长按检测');
+      }
     } else if (event is PointerMoveEvent && _dragStartPosition != null) {
       final delta = event.localPosition - _dragStartPosition!;
-      _totalDragDistance = delta.dx.abs();
+      final horizontalDistance = delta.dx.abs();
+      final verticalDistance = delta.dy.abs();
+      _totalDragDistance = horizontalDistance;
+
+      // 记录水平移动方向
+      if (horizontalDistance > 5.0) {
+        // 只记录明显的水平移动
+        _horizontalMovements.add(delta.dx);
+        if (_horizontalMovements.length > 5) {
+          _horizontalMovements.removeAt(0); // 保持最近5次移动记录
+        }
+
+        // 检查方向一致性
+        if (_horizontalMovements.length >= 2) {
+          final lastMovement = _horizontalMovements.last;
+          final secondLastMovement =
+              _horizontalMovements[_horizontalMovements.length - 2];
+          if ((lastMovement > 0) == (secondLastMovement > 0)) {
+            _consistentHorizontalCount++;
+          } else {
+            _consistentHorizontalCount = 0;
+          }
+        }
+      }
 
       debugPrint(
-          '移动事件: distance=$_totalDragDistance, isLongPressing=$_isLongPressing, isDragging=$_isDragging');
+          '移动事件: hDistance=$horizontalDistance, vDistance=$verticalDistance, ratio=${horizontalDistance / (verticalDistance + 1)}, consistent=$_consistentHorizontalCount, isLongPressing=$_isLongPressing, isDragging=$_isDragging');
 
-      // 如果已经在拖拽状态，直接更新拖拽位置
+      // 第一优先级：检查是否正在拖拽
       if (_isDragging) {
         debugPrint('拖拽中，更新位置: position=${event.localPosition}');
         _updateDragPosition(event.localPosition);
-        return;
+        return; // 拖拽时消费事件，防止滚动和滑动
       }
 
-      // 如果移动距离超过阈值，处理手势
-      if (_totalDragDistance > 10) {
-        if (_isLongPressing && !_isDragging) {
-          // 长按后移动，开始拖拽排序 - 优先级最高
-          debugPrint('长按后首次移动，开始拖拽: position=${event.localPosition}');
-          _startDragging(event.localPosition);
-          _updateDragPosition(event.localPosition);
-          // 拖拽时消费事件，防止滚动和滑动
-          return;
-        } else if (!_isLongPressing) {
-          // 非长按状态下处理滑动手势
-          if (delta.dx < 0) {
-            _swipeManager.startSwipe(
-                this, SwipeDirection.left, _totalDragDistance);
-          } else {
-            _swipeManager.startSwipe(
-                this, SwipeDirection.right, _totalDragDistance);
-          }
+      // 第二优先级：检查是否可以开始拖拽（长按后首次移动）
+      if (_isLongPressing &&
+          !_isDragging &&
+          _totalDragDistance > _moveThreshold) {
+        debugPrint('长按后首次移动，开始拖拽: position=${event.localPosition}');
+        _startDragging(event.localPosition);
+        _updateDragPosition(event.localPosition);
+        return; // 拖拽时消费事件，防止滚动和滑动
+      }
+
+      // 第三优先级：滑动手势处理（仅在非长按状态下）
+      // 增加严格的滑动检测条件
+      if (!_isLongPressing &&
+          !_isDragging &&
+          _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
+        debugPrint(
+            '处理滑动手势，distance=$_totalDragDistance, ratio=${horizontalDistance / (verticalDistance + 1)}');
+        if (delta.dx < 0) {
+          _swipeManager.startSwipe(
+              this, SwipeDirection.left, _totalDragDistance);
+        } else {
+          _swipeManager.startSwipe(
+              this, SwipeDirection.right, _totalDragDistance);
         }
       }
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
       debugPrint('抬起事件: isDragging=$_isDragging');
+
       if (_isDragging) {
         // 拖拽结束 - 直接结束，不触发滑动
         _cancelLongPressDetection();
-        // 不调用 _swipeManager.endSwipe，避免滑动日志
+        debugPrint('拖拽结束');
         return;
       } else {
-        // 处理滑动手势
+        // 处理滑动手势结束
         final delta = event.localPosition - _dragStartPosition!;
+        final horizontalDistance = delta.dx.abs();
+        final verticalDistance = delta.dy.abs();
 
-        // 只有在非长按状态且达到滑动阈值时才处理滑动
+        // 只有在非长按状态且满足严格滑动条件时才处理滑动
         if (!_isLongPressing &&
             !_isDragging &&
-            _totalDragDistance > _swipeThreshold) {
+            _shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
           SwipeDirection direction;
           if (delta.dx < 0) {
             // 左滑
@@ -1885,8 +1941,48 @@ class RenderEditableTextLine extends RenderEditableBox
         // 结束滑动和长按检测
         _swipeManager.endSwipe(this);
         _cancelLongPressDetection();
+
+        // 重置滑动检测状态
+        _horizontalMovements.clear();
+        _consistentHorizontalCount = 0;
       }
     }
+  }
+
+  /// 检查是否应该触发滑动开始
+  bool _shouldTriggerSwipe(double horizontalDistance, double verticalDistance) {
+    // 条件1：水平移动距离必须超过最小阈值
+    if (horizontalDistance < _moveThreshold) return false;
+
+    // 条件2：水平移动必须明显大于垂直移动
+    final ratio = horizontalDistance / (verticalDistance + 1.0);
+    if (ratio < _horizontalToVerticalRatio) return false;
+
+    // 条件3：需要有一定的方向一致性
+    if (_consistentHorizontalCount < _consistentDirectionSamples - 2)
+      return false;
+
+    debugPrint(
+        '滑动触发检查: h=$horizontalDistance, v=$verticalDistance, ratio=$ratio, consistent=$_consistentHorizontalCount');
+    return true;
+  }
+
+  /// 检查是否应该完成滑动操作
+  bool _shouldCompleteSwipe(
+      double horizontalDistance, double verticalDistance) {
+    // 条件1：水平移动距离必须超过完成阈值
+    if (horizontalDistance < _swipeThreshold) return false;
+
+    // 条件2：水平移动必须明显大于垂直移动
+    final ratio = horizontalDistance / (verticalDistance + 1.0);
+    if (ratio < _horizontalToVerticalRatio) return false;
+
+    // 条件3：需要有足够的方向一致性
+    if (_consistentHorizontalCount < _consistentDirectionSamples) return false;
+
+    debugPrint(
+        '滑动完成检查: h=$horizontalDistance, v=$verticalDistance, ratio=$ratio, consistent=$_consistentHorizontalCount');
+    return true;
   }
 
   @override

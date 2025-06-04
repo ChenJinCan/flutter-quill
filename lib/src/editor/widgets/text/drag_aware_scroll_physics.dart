@@ -34,8 +34,8 @@ class DragAwareScrollPhysics extends ScrollPhysics {
 
   @override
   bool shouldAcceptUserOffset(ScrollMetrics position) {
-    // 如果正在拖拽，不接受用户滚动
-    if (swipeManager?.shouldPreventScroll() == true) {
+    // 如果正在拖拽或滑动，不接受用户滚动
+    if (swipeManager?.shouldPreventOtherGestures() == true) {
       return false;
     }
     return super.shouldAcceptUserOffset(position);
@@ -43,8 +43,8 @@ class DragAwareScrollPhysics extends ScrollPhysics {
 
   @override
   double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
-    // 如果正在拖拽，返回0阻止滚动
-    if (swipeManager?.shouldPreventScroll() == true) {
+    // 如果正在拖拽或滑动，返回0阻止滚动
+    if (swipeManager?.shouldPreventOtherGestures() == true) {
       return 0.0;
     }
     return super.applyPhysicsToUserOffset(position, offset);
@@ -53,8 +53,8 @@ class DragAwareScrollPhysics extends ScrollPhysics {
   @override
   Simulation? createBallisticSimulation(
       ScrollMetrics position, double velocity) {
-    // 如果正在拖拽，不创建惯性滚动
-    if (swipeManager?.shouldPreventScroll() == true) {
+    // 如果正在拖拽或滑动，不创建惯性滚动
+    if (swipeManager?.shouldPreventOtherGestures() == true) {
       return null;
     }
     return super.createBallisticSimulation(position, velocity);

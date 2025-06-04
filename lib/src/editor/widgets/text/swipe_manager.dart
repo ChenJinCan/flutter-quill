@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../controller/quill_controller.dart';
 import '../../../document/nodes/node.dart';
 import '../../../document/nodes/line.dart';
 import '../../../document/nodes/block.dart';
@@ -20,6 +21,15 @@ class SwipeStateManager {
   /// 当前正在拖拽的组件
   SwipeableComponent? _currentDraggingComponent;
 
+  /// QuillController引用，用于在拖拽时取消focus
+  QuillController? _controller;
+
+  /// FocusNode引用，用于在拖拽时取消focus
+  FocusNode? _focusNode;
+
+  /// ScrollController引用，用于监听滚动事件
+  ScrollController? _scrollController;
+
   /// 拖拽排序相关回调
   VoidCallback? _onDragStart;
   void Function(Offset globalPosition, SwipeableComponent draggingComponent)?
@@ -36,9 +46,52 @@ class SwipeStateManager {
   void Function(Line? line, Block? block, SwipeDirection direction)?
       _onComponentSelected;
 
+  /// 设置编辑器引用，用于在拖拽时取消focus和监听滚动
+  void setEditorReferences({
+    QuillController? controller,
+    FocusNode? focusNode,
+    ScrollController? scrollController,
+  }) {
+    _controller = controller;
+    _focusNode = focusNode;
+
+    // 如果有新的ScrollController，先移除旧的监听器再添加新的
+    if (_scrollController != scrollController) {
+      _scrollController?.removeListener(_onScrollChanged);
+      _scrollController = scrollController;
+      _scrollController?.addListener(_onScrollChanged);
+    }
+  }
+
+  /// 滚动事件监听器 - 在滚动时重置所有滑动状态
+  void _onScrollChanged() {
+    // 如果有组件在滑动状态，重置它们
+    if (_currentSwipingComponent != null) {
+      debugPrint('检测到滚动，重置滑动状态');
+      _currentSwipingComponent!.resetSwipe();
+      _currentSwipingComponent = null;
+    }
+
+    // 清除选中状态（如果存在）
+    if (_selectedComponent != null) {
+      _selectedComponent!.setSelected(false);
+      _selectedComponent = null;
+    }
+  }
+
   /// 检查是否应该阻止滚动事件（拖拽时）
   bool shouldPreventScroll() {
     return _currentDraggingComponent != null;
+  }
+
+  /// 检查是否正在滑动（任何类型的滑动）
+  bool get isSwipingOrDragging =>
+      _currentSwipingComponent != null || _currentDraggingComponent != null;
+
+  /// 检查是否应该阻止其他手势（当有任何活动状态时）
+  bool shouldPreventOtherGestures() {
+    return _currentSwipingComponent != null ||
+        _currentDraggingComponent != null;
   }
 
   /// 设置滑动事件回调
@@ -86,6 +139,12 @@ class SwipeStateManager {
       _selectedComponent = null;
     }
 
+    // 开始拖拽时取消编辑器焦点
+    if (_focusNode?.hasFocus == true) {
+      debugPrint('SwipeStateManager.startDrag: 取消编辑器焦点');
+      _focusNode!.unfocus();
+    }
+
     _currentDraggingComponent = component;
     debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
     _onDragStart?.call();
@@ -128,11 +187,14 @@ class SwipeStateManager {
       SwipeableComponent component, SwipeDirection direction, double offset) {
     // 如果有组件正在拖拽，不允许开始滑动
     if (_currentDraggingComponent != null) {
+      debugPrint('SwipeStateManager.startSwipe: 有组件正在拖拽，拒绝滑动');
       return false;
     }
 
+    // 如果有其他组件在滑动，先重置它们
     if (_currentSwipingComponent != null &&
         _currentSwipingComponent != component) {
+      debugPrint('SwipeStateManager.startSwipe: 重置其他组件的滑动状态');
       _currentSwipingComponent!.resetSwipe();
     }
 
@@ -148,6 +210,7 @@ class SwipeStateManager {
     // 触发滑动开始回调
     if (_currentSwipingComponent != _selectedComponent) {
       _onSwipeStart?.call();
+      debugPrint('SwipeStateManager.startSwipe: 开始滑动 ${component.componentId}');
     }
 
     // 开始滑动
@@ -219,6 +282,15 @@ class SwipeStateManager {
 
   /// 获取当前正在拖拽的组件
   SwipeableComponent? get currentDraggingComponent => _currentDraggingComponent;
+
+  /// 清理资源，移除所有监听器
+  void dispose() {
+    _scrollController?.removeListener(_onScrollChanged);
+    _scrollController = null;
+    _controller = null;
+    _focusNode = null;
+    resetAll();
+  }
 }
 
 /// 滑动方向枚举

@@ -45,6 +45,14 @@ class DragSortOverlay {
     required Offset initialGlobalPosition,
     ScrollController? scrollController,
   }) {
+    // 检查是否有其他组件在滑动 - 如果有则不显示拖拽覆盖层
+    final swipeManager = SwipeStateManager();
+    if (swipeManager.currentSwipingComponent != null &&
+        swipeManager.currentSwipingComponent != component) {
+      debugPrint('DragSortOverlay.show: 有其他组件在滑动，不显示拖拽覆盖层');
+      return;
+    }
+
     hide(); // 确保之前的覆盖层被移除
 
     _draggingComponent = component;

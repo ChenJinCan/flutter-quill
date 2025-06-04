@@ -461,7 +461,14 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   static const double _kMaxSwipeOffset = 40.0;
   Offset? _dragStartPosition;
   double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 30.0;
+  static const double _swipeThreshold = 60.0; // 增加滑动阈值从30到60
+  static const double _moveThreshold = 15.0; // 增加移动阈值
+  static const double _horizontalToVerticalRatio = 2.0; // 水平移动必须是垂直移动的2倍以上
+  static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
+
+  // 滑动方向一致性检查
+  List<double> _horizontalMovements = []; // 记录最近几次的水平移动
+  int _consistentHorizontalCount = 0; // 连续相同方向的计数
 
   // 选中状态
   bool _isSelected = false;
@@ -526,6 +533,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     _swipeOffset = 0.0;
     _dragStartPosition = null;
     _totalDragDistance = 0.0;
+    _horizontalMovements.clear();
+    _consistentHorizontalCount = 0;
     markNeedsPaint();
   }
 
@@ -862,6 +871,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     if (event is PointerDownEvent) {
       _dragStartPosition = event.localPosition;
       _totalDragDistance = 0.0;
+      _horizontalMovements.clear();
+      _consistentHorizontalCount = 0;
 
       // 检查是否点击在任何TextLine上
       bool hitTextLine = _isPositionOnTextLine(event.localPosition);
@@ -871,7 +882,30 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
       }
     } else if (event is PointerMoveEvent && _dragStartPosition != null) {
       final delta = event.localPosition - _dragStartPosition!;
-      _totalDragDistance = delta.dx.abs();
+      final horizontalDistance = delta.dx.abs();
+      final verticalDistance = delta.dy.abs();
+      _totalDragDistance = horizontalDistance;
+
+      // 记录水平移动方向
+      if (horizontalDistance > 5.0) {
+        // 只记录明显的水平移动
+        _horizontalMovements.add(delta.dx);
+        if (_horizontalMovements.length > 5) {
+          _horizontalMovements.removeAt(0); // 保持最近5次移动记录
+        }
+
+        // 检查方向一致性
+        if (_horizontalMovements.length >= 2) {
+          final lastMovement = _horizontalMovements.last;
+          final secondLastMovement =
+              _horizontalMovements[_horizontalMovements.length - 2];
+          if ((lastMovement > 0) == (secondLastMovement > 0)) {
+            _consistentHorizontalCount++;
+          } else {
+            _consistentHorizontalCount = 0;
+          }
+        }
+      }
 
       // 检查手势是否开始在TextLine上
       bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
@@ -887,8 +921,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
         return;
       }
 
-      // 只在完全不在TextLine区域内的手势才处理Block级别的滑动
-      if (_totalDragDistance > 10) {
+      // 只在完全不在TextLine区域内的手势且满足严格条件才处理Block级别的滑动
+      if (_shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
         if (delta.dx < 0) {
           _swipeManager.startSwipe(
               this, SwipeDirection.left, _totalDragDistance);
@@ -899,6 +933,8 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
       }
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
       final delta = event.localPosition - _dragStartPosition!;
+      final horizontalDistance = delta.dx.abs();
+      final verticalDistance = delta.dy.abs();
 
       // 检查手势是否开始在TextLine上
       bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
@@ -907,7 +943,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
         return;
       }
 
-      if (_totalDragDistance > _swipeThreshold) {
+      if (_shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
         SwipeDirection direction;
         if (delta.dx < 0) {
           direction = SwipeDirection.left;
@@ -921,7 +957,43 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
       // 结束滑动
       _swipeManager.endSwipe(this);
+
+      // 重置滑动检测状态
+      _horizontalMovements.clear();
+      _consistentHorizontalCount = 0;
     }
+  }
+
+  /// 检查是否应该触发滑动开始
+  bool _shouldTriggerSwipe(double horizontalDistance, double verticalDistance) {
+    // 条件1：水平移动距离必须超过最小阈值
+    if (horizontalDistance < _moveThreshold) return false;
+
+    // 条件2：水平移动必须明显大于垂直移动
+    final ratio = horizontalDistance / (verticalDistance + 1.0);
+    if (ratio < _horizontalToVerticalRatio) return false;
+
+    // 条件3：需要有一定的方向一致性
+    if (_consistentHorizontalCount < _consistentDirectionSamples - 2)
+      return false;
+
+    return true;
+  }
+
+  /// 检查是否应该完成滑动操作
+  bool _shouldCompleteSwipe(
+      double horizontalDistance, double verticalDistance) {
+    // 条件1：水平移动距离必须超过完成阈值
+    if (horizontalDistance < _swipeThreshold) return false;
+
+    // 条件2：水平移动必须明显大于垂直移动
+    final ratio = horizontalDistance / (verticalDistance + 1.0);
+    if (ratio < _horizontalToVerticalRatio) return false;
+
+    // 条件3：需要有足够的方向一致性
+    if (_consistentHorizontalCount < _consistentDirectionSamples) return false;
+
+    return true;
   }
 
   /// 检查位置是否在任何TextLine上

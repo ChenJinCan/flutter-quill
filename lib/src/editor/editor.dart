@@ -243,6 +243,13 @@ class QuillEditorState extends State<QuillEditor>
       onSwipeEnd: config.onSwipeEnd,
       onComponentSelected: config.onComponentSelected,
     );
+
+    // 设置滑动管理器的编辑器引用
+    _swipeManager.setEditorReferences(
+      controller: controller,
+      focusNode: focusNode,
+      scrollController: widget.scrollController,
+    );
   }
 
   @override
@@ -448,6 +455,12 @@ class QuillEditorState extends State<QuillEditor>
   void dispose() {
     // 移除控制器监听器
     widget.controller.removeListener(_onSelectionChanged);
+    // 清理滑动管理器的当前编辑器引用（不dispose整个管理器，因为它是单例）
+    _swipeManager.setEditorReferences(
+      controller: null,
+      focusNode: null,
+      scrollController: null,
+    );
     super.dispose();
   }
 }
