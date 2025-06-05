@@ -118,8 +118,46 @@ class SwipeStateManager {
     _onDragEnd = onDragEnd;
   }
 
+  /// 检查指定组件是否应该允许拖拽
+  /// 当有焦点时，只有当前光标所在的TextLine被禁止拖拽，其他的允许拖拽
+  bool shouldAllowDrag(SwipeableComponent component) {
+    // 如果没有焦点，允许所有拖拽
+    if (_focusNode?.hasFocus != true || _controller == null) {
+      return true;
+    }
+
+    // 如果不是TextLine组件，允许拖拽
+    if (component.lineNode == null) {
+      return true;
+    }
+
+    // 检查当前组件是否包含光标
+    final selection = _controller!.selection;
+    if (!selection.isValid || !selection.isCollapsed) {
+      return true; // 如果没有有效的光标或有选择范围，允许拖拽
+    }
+
+    final cursorOffset = selection.baseOffset;
+    final lineStartOffset = component.documentOffset;
+    final lineEndOffset = lineStartOffset + component.documentLength;
+
+    // 如果光标在当前TextLine范围内，禁止拖拽
+    if (cursorOffset >= lineStartOffset && cursorOffset < lineEndOffset) {
+      debugPrint('SwipeStateManager.shouldAllowDrag: 光标在当前TextLine，禁止拖拽');
+      return false;
+    }
+
+    return true;
+  }
+
   /// 开始拖拽排序
   bool startDrag(SwipeableComponent component) {
+    // 检查是否应该允许拖拽
+    if (!shouldAllowDrag(component)) {
+      debugPrint('SwipeStateManager.startDrag: 当前组件不允许拖拽');
+      return false;
+    }
+
     // 如果已有其他组件在拖拽，先结束它们
     if (_currentDraggingComponent != null &&
         _currentDraggingComponent != component) {
@@ -188,6 +226,12 @@ class SwipeStateManager {
     // 如果有组件正在拖拽，不允许开始滑动
     if (_currentDraggingComponent != null) {
       debugPrint('SwipeStateManager.startSwipe: 有组件正在拖拽，拒绝滑动');
+      return false;
+    }
+
+    // 当有焦点时，全局禁止左右滑动操作
+    if (_focusNode?.hasFocus == true) {
+      debugPrint('SwipeStateManager.startSwipe: 编辑器有焦点，禁止滑动操作');
       return false;
     }
 

@@ -883,7 +883,7 @@ class RenderEditableTextLine extends RenderEditableBox
   bool _isDragging = false;
   Timer? _longPressTimer;
   static const Duration _longPressDuration =
-      Duration(milliseconds: 600); // 增加长按时间从500ms到800ms
+      Duration(milliseconds: 700); // 增加长按时间从500ms到800ms
   VoidCallback? _onLongPressStart;
   VoidCallback? _onDragEnd;
 
@@ -1004,8 +1004,20 @@ class RenderEditableTextLine extends RenderEditableBox
     _longPressTimer?.cancel();
     _longPressTimer = Timer(_longPressDuration, () {
       if (!_isLongPressing && !_isDragging) {
+        // 在开始拖拽前，检查是否允许拖拽
+        if (!_swipeManager.shouldAllowDrag(this)) {
+          debugPrint('长按检测: 当前TextLine不允许拖拽（可能包含光标）');
+          return;
+        }
+
         _isLongPressing = true;
-        _swipeManager.startDrag(this);
+        final success = _swipeManager.startDrag(this);
+        if (!success) {
+          debugPrint('长按检测: SwipeStateManager拒绝拖拽');
+          _isLongPressing = false;
+          return;
+        }
+
         _onLongPressStart?.call();
         debugPrint('长按检测成功，进入长按状态: $_isLongPressing');
 

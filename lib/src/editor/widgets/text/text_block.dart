@@ -546,6 +546,12 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   @override
   bool startDrag() {
+    // 在开始拖拽前，检查是否允许拖拽
+    if (!_swipeManager.shouldAllowDrag(this)) {
+      debugPrint('TextBlock.startDrag: 当前Block不允许拖拽');
+      return false;
+    }
+
     // TextBlock的拖拽排序功能
     // 可以在这里实现拖拽排序的开始逻辑
     markNeedsPaint();
