@@ -362,6 +362,9 @@ class QuillEditorState extends State<QuillEditor>
         readOnlyMouseCursor: config.readOnlyMouseCursor,
         textInputAction: config.textInputAction,
         onPerformAction: config.onPerformAction,
+        onSwipeStart: config.onSwipeStart,
+        onSwipeEnd: config.onSwipeEnd,
+        onComponentSelected: config.onComponentSelected,
       ),
     );
 

@@ -43,8 +43,8 @@ class SwipeStateManager {
   VoidCallback? _onSwipeEnd;
 
   /// 组件选中回调
-  void Function(Line? line, Block? block, SwipeDirection direction)?
-      _onComponentSelected;
+  void Function(Line? line, Block? block, SwipeDirection direction,
+      int documentOffset, int documentLength)? _onComponentSelected;
 
   /// 设置编辑器引用，用于在拖拽时取消focus和监听滚动
   void setEditorReferences({
@@ -98,7 +98,8 @@ class SwipeStateManager {
   void setSwipeCallbacks({
     VoidCallback? onSwipeStart,
     VoidCallback? onSwipeEnd,
-    void Function(Line? line, Block? block, SwipeDirection direction)?
+    void Function(Line? line, Block? block, SwipeDirection direction,
+            int documentOffset, int documentLength)?
         onComponentSelected,
   }) {
     _onSwipeStart = onSwipeStart;
@@ -301,8 +302,9 @@ class SwipeStateManager {
     _selectedComponent = component;
     component.setSelected(true);
 
-    // 触发选中回调
-    _onComponentSelected?.call(component.lineNode, component.block, direction);
+    // 触发选中回调，增加documentOffset和documentLength参数
+    _onComponentSelected?.call(component.lineNode, component.block, direction,
+        component.documentOffset, component.documentLength);
   }
 
   /// 清除选中状态

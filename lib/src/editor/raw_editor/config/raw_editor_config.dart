@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:meta/meta.dart';
 
 import '../../../document/nodes/node.dart';
+import '../../../document/nodes/line.dart';
+import '../../../document/nodes/block.dart';
 import '../../../editor/embed/embed_editor_builder.dart';
 import '../../../editor/raw_editor/raw_editor.dart';
 import '../../../editor/raw_editor/raw_editor_state.dart';
@@ -11,6 +13,7 @@ import '../../../editor/widgets/cursor.dart';
 import '../../../editor/widgets/default_styles.dart';
 import '../../../editor/widgets/delegate.dart';
 import '../../../editor/widgets/link.dart';
+import '../../../editor/widgets/text/swipe_manager.dart';
 import '../../../toolbar/theme/quill_dialog_theme.dart';
 import '../../widgets/text/magnifier.dart';
 import '../../widgets/text/utils/text_block_utils.dart';
@@ -72,6 +75,9 @@ class QuillRawEditorConfig {
     this.onPerformAction,
     @experimental this.customLeadingBuilder,
     this.quillMagnifierBuilder,
+    this.onSwipeStart,
+    this.onSwipeEnd,
+    this.onComponentSelected,
   });
 
   /// Controls whether this editor has keyboard focus.
@@ -413,4 +419,14 @@ class QuillRawEditorConfig {
 
   /// Used to build the [QuillMagnifier] when long-pressing/dragging selection
   final QuillMagnifierBuilder? quillMagnifierBuilder;
+
+  /// 滑动开始回调
+  final VoidCallback? onSwipeStart;
+
+  /// 滑动结束回调
+  final VoidCallback? onSwipeEnd;
+
+  /// 组件选中回调
+  final void Function(Line? line, Block? block, SwipeDirection direction,
+      int documentOffset, int documentLength)? onComponentSelected;
 }

@@ -489,8 +489,8 @@ class QuillEditorConfig {
   final VoidCallback? onSwipeEnd;
 
   /// 组件选中回调
-  final void Function(Line? line, Block? block, SwipeDirection direction)?
-      onComponentSelected;
+  final void Function(Line? line, Block? block, SwipeDirection direction,
+      int documentOffset, int documentLength)? onComponentSelected;
 
   // IMPORTANT For project authors: The copyWith()
   // should be manually updated each time we add or remove a property
@@ -554,7 +554,8 @@ class QuillEditorConfig {
     void Function(TextInputAction action)? onPerformAction,
     VoidCallback? onSwipeStart,
     VoidCallback? onSwipeEnd,
-    void Function(Line? line, Block? block, SwipeDirection direction)?
+    void Function(Line? line, Block? block, SwipeDirection direction,
+            int documentOffset, int documentLength)?
         onComponentSelected,
   }) {
     return QuillEditorConfig(

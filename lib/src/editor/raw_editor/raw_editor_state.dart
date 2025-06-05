@@ -982,16 +982,9 @@ class QuillRawEditorState extends EditorState
 
     // 设置滑动回调
     swipeManager.setSwipeCallbacks(
-      onSwipeStart: () {
-        debugPrint('开始滑动');
-      },
-      onSwipeEnd: () {
-        debugPrint('结束滑动');
-      },
-      onComponentSelected: (line, block, direction) {
-        debugPrint(
-            '选中组件: ${line?.toPlainText() ?? block?.toPlainText()}, 方向: $direction');
-      },
+      onSwipeStart: widget.config.onSwipeStart,
+      onSwipeEnd: widget.config.onSwipeEnd,
+      onComponentSelected: widget.config.onComponentSelected,
     );
   }
 
