@@ -139,6 +139,7 @@ class EditableTextBlock extends StatelessWidget {
       decoration:
           _getDecorationForBlock(block, defaultStyles) ?? const BoxDecoration(),
       contentPadding: contentPadding,
+      hasFocus: hasFocus,
       children: _buildChildren(
         context,
         indentLevelCounts,
@@ -439,6 +440,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     required EdgeInsetsGeometry padding,
     required super.scrollBottomInset,
     required Decoration decoration,
+    required this.hasFocus,
     super.children,
     EdgeInsets contentPadding = EdgeInsets.zero,
   })  : _decoration = decoration,
@@ -453,6 +455,9 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   EdgeInsetsGeometry _savedPadding;
   EdgeInsets _contentPadding;
+
+  // 新增：聚焦状态
+  bool hasFocus;
 
   // 滑动相关属性
   bool _isSwipingLeft = false;
@@ -874,6 +879,12 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
     assert(debugHandleEvent(event, entry));
 
+    // 新增：聚焦时禁用所有Block级别的滑动操作
+    if (hasFocus) {
+      debugPrint('编辑器聚焦状态下，TextBlock禁用滑动手势');
+      return;
+    }
+
     if (event is PointerDownEvent) {
       _dragStartPosition = event.localPosition;
       _totalDragDistance = 0.0;
@@ -1059,6 +1070,7 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       required this.scrollBottomInset,
       required this.decoration,
       required this.contentPadding,
+      required this.hasFocus,
       required super.children});
 
   final Block block;
@@ -1068,6 +1080,7 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
   final double scrollBottomInset;
   final Decoration decoration;
   final EdgeInsets? contentPadding;
+  final bool hasFocus;
 
   EdgeInsets get _padding => EdgeInsets.only(
       left: horizontalSpacing.left,
@@ -1086,6 +1099,7 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       scrollBottomInset: scrollBottomInset,
       decoration: decoration,
       contentPadding: _contentPadding,
+      hasFocus: hasFocus,
     );
   }
 
@@ -1098,6 +1112,7 @@ class _EditableBlock extends MultiChildRenderObjectWidget {
       ..scrollBottomInset = scrollBottomInset
       ..setPadding(_padding)
       ..decoration = decoration
-      ..contentPadding = _contentPadding;
+      ..contentPadding = _contentPadding
+      ..hasFocus = hasFocus;
   }
 }

@@ -1828,6 +1828,33 @@ class RenderEditableTextLine extends RenderEditableBox
     debugPrint(
         '光标状态检查: hasFocus=$hasFocus, cursorShow=${cursorCont.show.value}, containsCursor=${containsCursor()}, isCollapsed=${textSelection.isCollapsed}, hasCursorOnThisLine=$hasCursorOnThisLine');
 
+    // 新增：聚焦时的限制检查
+    if (hasFocus) {
+      // 1. 聚焦时不允许所有TextLine执行左右滑动操作
+      // 如果是滑动相关的手势，直接返回不处理
+      if (event is PointerMoveEvent &&
+          _dragStartPosition != null &&
+          !_isDragging) {
+        final delta = event.localPosition - _dragStartPosition!;
+        final horizontalDistance = delta.dx.abs();
+        final verticalDistance = delta.dy.abs();
+
+        // 如果是明显的水平滑动手势，在聚焦状态下直接阻止
+        if (horizontalDistance > _moveThreshold &&
+            horizontalDistance >
+                verticalDistance * _horizontalToVerticalRatio) {
+          debugPrint('聚焦状态下禁用滑动手势');
+          return;
+        }
+      }
+
+      // 2. 聚焦时不允许当前选中的TextLine执行长按拖动操作
+      if (hasCursorOnThisLine) {
+        debugPrint('当前TextLine被选中且聚焦，禁用所有手势操作');
+        return;
+      }
+    }
+
     // 如果全局正在拖拽或滑动，消费此事件避免滚动冲突
     if (_swipeManager.shouldPreventOtherGestures() &&
         event is PointerMoveEvent) {
@@ -1848,7 +1875,22 @@ class RenderEditableTextLine extends RenderEditableBox
       _horizontalMovements.clear();
       _consistentHorizontalCount = 0;
 
-      // 只有在没有光标显示时才启动长按检测
+      // 在聚焦状态下：
+      // - 如果是当前选中的TextLine，不启动任何检测
+      // - 如果是其他TextLine，只允许长按检测（不允许滑动）
+      if (hasFocus) {
+        if (hasCursorOnThisLine) {
+          debugPrint('当前TextLine被选中且聚焦，不启动任何手势检测');
+          return;
+        } else {
+          // 其他TextLine在聚焦状态下只允许长按拖动，不允许滑动
+          _startLongPressDetection(event.localPosition);
+          debugPrint('其他TextLine在聚焦状态下开始长按检测: ${event.localPosition}');
+          return;
+        }
+      }
+
+      // 非聚焦状态下的原有逻辑：只有在没有光标显示时才启动长按检测
       if (!hasCursorOnThisLine) {
         _startLongPressDetection(event.localPosition);
         debugPrint('开始长按检测: ${event.localPosition}');
@@ -1902,10 +1944,11 @@ class RenderEditableTextLine extends RenderEditableBox
         return; // 拖拽时消费事件，防止滚动和滑动
       }
 
-      // 第三优先级：滑动手势处理（仅在非长按状态下）
+      // 第三优先级：滑动手势处理（仅在非长按状态下且非聚焦状态下）
       // 增加严格的滑动检测条件
       if (!_isLongPressing &&
           !_isDragging &&
+          !hasFocus && // 新增：聚焦状态下不允许滑动
           _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
         debugPrint(
             '处理滑动手势，distance=$_totalDragDistance, ratio=${horizontalDistance / (verticalDistance + 1)}');
@@ -1926,14 +1969,15 @@ class RenderEditableTextLine extends RenderEditableBox
         debugPrint('拖拽结束');
         return;
       } else {
-        // 处理滑动手势结束
+        // 处理滑动手势结束（仅在非聚焦状态下）
         final delta = event.localPosition - _dragStartPosition!;
         final horizontalDistance = delta.dx.abs();
         final verticalDistance = delta.dy.abs();
 
-        // 只有在非长按状态且满足严格滑动条件时才处理滑动
+        // 只有在非长按状态、非聚焦状态且满足严格滑动条件时才处理滑动
         if (!_isLongPressing &&
             !_isDragging &&
+            !hasFocus && // 新增：聚焦状态下不允许滑动
             _shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
           SwipeDirection direction;
           if (delta.dx < 0) {
