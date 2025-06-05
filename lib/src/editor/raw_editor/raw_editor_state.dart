@@ -946,10 +946,12 @@ class QuillRawEditorState extends EditorState
       onDragStart: () {
         // 拖拽开始时的处理
         debugPrint('拖拽排序开始');
+        // 确保隐藏之前的覆盖层
+        DragSortOverlay.hide();
       },
       onDragUpdate: (globalPosition, draggingComponent) {
         // 显示或更新拖拽覆盖层
-        if (mounted && context.mounted) {
+        if (!DragSortOverlay.isVisible && mounted && context.mounted) {
           DragSortOverlay.show(
             context: context,
             component: draggingComponent,
@@ -960,14 +962,20 @@ class QuillRawEditorState extends EditorState
           );
         }
 
-        // 更新覆盖层位置
+        // 总是更新覆盖层位置
         DragSortOverlay.updatePosition(globalPosition);
 
         debugPrint('拖拽更新: ${globalPosition.dx}, ${globalPosition.dy}');
       },
       onDragEnd: (draggingComponent) {
-        // 拖拽结束时隐藏覆盖层
-        DragSortOverlay.hide();
+        // 完成拖拽排序的文档重排序操作
+        try {
+          DragSortOverlay.completeDragSort();
+        } catch (e) {
+          debugPrint('拖拽排序文档操作失败: $e');
+          // 即使排序失败也要隐藏覆盖层
+          DragSortOverlay.hide();
+        }
         debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
       },
     );

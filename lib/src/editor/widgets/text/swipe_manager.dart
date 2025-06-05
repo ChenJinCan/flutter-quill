@@ -212,7 +212,15 @@ class SwipeStateManager {
       final component = _currentDraggingComponent!;
       _currentDraggingComponent = null;
       component.endDrag();
-      _onDragEnd?.call(component);
+
+      // 触发拖拽完成的文档重排序操作
+      try {
+        // 使用动态导入避免循环依赖
+        // 通过回调方式处理拖拽完成
+        _onDragEnd?.call(component);
+      } catch (e) {
+        debugPrint('SwipeStateManager.endDrag: 拖拽完成处理失败: $e');
+      }
     }
   }
 

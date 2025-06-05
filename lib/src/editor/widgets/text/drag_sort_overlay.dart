@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../controller/quill_controller.dart';
+import '../../../document/document.dart';
+import '../../../document/nodes/line.dart';
+import '../../../document/nodes/block.dart';
 import 'swipe_manager.dart';
 
 /// 用于存储TextLine位置信息的辅助类
@@ -16,6 +19,14 @@ class _LineInfo {
     required this.bottom,
     required this.height,
   });
+}
+
+/// 用于存储插入位置结果的辅助类
+class _InsertionResult {
+  final double insertionY;
+  final int documentOffset;
+
+  _InsertionResult(this.insertionY, this.documentOffset);
 }
 
 /// 拖拽排序覆盖层 - 精简版本，模仿 Notion/Craft 交互
@@ -35,6 +46,9 @@ class DragSortOverlay {
 
   // 当前拖拽位置
   static Offset? _currentPosition;
+
+  // 拖拽插入位置（文档偏移量）
+  static int? _insertionOffset;
 
   /// 显示拖拽覆盖层
   static void show({
@@ -61,6 +75,7 @@ class DragSortOverlay {
     _scrollController = scrollController;
     _currentPosition = initialGlobalPosition;
     _context = context;
+    _insertionOffset = null;
 
     _overlayEntry = OverlayEntry(
       builder: (context) => _DragOverlayWidget(
@@ -75,6 +90,9 @@ class DragSortOverlay {
     Overlay.of(context).insert(_overlayEntry!);
   }
 
+  /// 检查覆盖层是否可见
+  static bool get isVisible => _overlayEntry != null;
+
   /// 隐藏拖拽覆盖层
   static void hide() {
     _stopEdgeScroll();
@@ -86,6 +104,7 @@ class DragSortOverlay {
     _scrollController = null;
     _currentPosition = null;
     _context = null;
+    _insertionOffset = null;
   }
 
   /// 更新拖拽位置
@@ -93,6 +112,98 @@ class DragSortOverlay {
     _currentPosition = globalPosition;
     _checkEdgeScroll(globalPosition);
     _overlayEntry?.markNeedsBuild();
+  }
+
+  /// 完成拖拽排序操作
+  static void completeDragSort() {
+    debugPrint('DragSortOverlay.completeDragSort: 开始检查参数');
+    debugPrint('  _draggingComponent: ${_draggingComponent?.componentId}');
+    debugPrint('  _controller: ${_controller != null}');
+    debugPrint('  _insertionOffset: $_insertionOffset');
+
+    if (_draggingComponent == null ||
+        _controller == null ||
+        _insertionOffset == null) {
+      debugPrint('DragSortOverlay.completeDragSort: 缺少必要参数');
+      hide();
+      return;
+    }
+
+    try {
+      _performDocumentReorder(
+          _draggingComponent!, _controller!, _insertionOffset!);
+    } catch (e) {
+      debugPrint('DragSortOverlay.completeDragSort: 拖拽排序失败: $e');
+    } finally {
+      hide();
+    }
+  }
+
+  /// 执行文档重排序
+  static void _performDocumentReorder(SwipeableComponent component,
+      QuillController controller, int insertionOffset) {
+    // 获取拖拽组件的信息
+    final sourceOffset = component.documentOffset;
+    final sourceLength = component.documentLength;
+
+    // 如果插入位置在原位置范围内，不需要移动
+    if (insertionOffset >= sourceOffset &&
+        insertionOffset <= sourceOffset + sourceLength) {
+      debugPrint('DragSortOverlay._performDocumentReorder: 插入位置在原位置范围内，无需移动');
+      return;
+    }
+
+    debugPrint('DragSortOverlay._performDocumentReorder: 开始重排序');
+    debugPrint('  源位置: $sourceOffset, 长度: $sourceLength');
+    debugPrint('  目标位置: $insertionOffset');
+
+    // Step 1: 提取完整的 TextLine Delta（包含所有格式和属性）
+    final completeLineDelta = controller.document
+        .toDelta()
+        .slice(sourceOffset, sourceOffset + sourceLength);
+
+    final textContent =
+        controller.document.getPlainText(sourceOffset, sourceLength);
+    debugPrint('  移动的文本: "${textContent.trim()}"');
+
+    // Step 2: 设置 skipRequestKeyboard 避免自动聚焦键盘
+    final originalSkipRequestKeyboard = controller.skipRequestKeyboard;
+    controller.skipRequestKeyboard = true;
+
+    // Step 3: 计算调整后的插入位置
+    int adjustedInsertionOffset = insertionOffset;
+    if (insertionOffset > sourceOffset) {
+      // 如果插入位置在删除位置之后，需要减去删除的长度
+      adjustedInsertionOffset = insertionOffset - sourceLength;
+    }
+
+    try {
+      // Step 4: 删除原始位置的完整内容（包括换行符）
+      controller.replaceText(sourceOffset, sourceLength, '', null,
+          shouldNotifyListeners: false);
+
+      debugPrint('  调整后的插入位置: $adjustedInsertionOffset');
+
+      // Step 5: 在新位置插入完整的 TextLine Delta
+      // 确保插入位置不超出文档范围
+      final documentLength = controller.document.length;
+      if (adjustedInsertionOffset >= documentLength) {
+        adjustedInsertionOffset = documentLength;
+      } else if (adjustedInsertionOffset < 0) {
+        adjustedInsertionOffset = 0;
+      }
+
+      // Step 6: 插入内容，避免自动聚焦
+      controller.replaceText(
+          adjustedInsertionOffset, 0, completeLineDelta, null,
+          shouldNotifyListeners: true);
+    } finally {
+      // 恢复原始的 skipRequestKeyboard 状态
+      controller.skipRequestKeyboard = originalSkipRequestKeyboard;
+    }
+
+    debugPrint(
+        'DragSortOverlay._performDocumentReorder: 重排序完成，插入位置: $adjustedInsertionOffset');
   }
 
   /// 获取准确的AppBar高度
@@ -419,45 +530,64 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
   /// 更新插入指示器位置 - 使用精确的LineInfo计算
   void _updateInsertIndicator(Offset globalPosition) {
     final renderObject = widget.editorKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox) return;
+    if (renderObject is! RenderBox) {
+      debugPrint('_updateInsertIndicator: renderObject 不是 RenderBox');
+      return;
+    }
 
     try {
       final editorGlobalPosition = renderObject.localToGlobal(Offset.zero);
       final editorLocalPosition = renderObject.globalToLocal(globalPosition);
       final editorSize = renderObject.size;
 
+      debugPrint('_updateInsertIndicator: globalPosition=$globalPosition');
+      debugPrint(
+          '_updateInsertIndicator: editorLocalPosition=$editorLocalPosition');
+      debugPrint('_updateInsertIndicator: editorSize=$editorSize');
+
       // 确保拖拽位置在编辑器范围内
       if (editorLocalPosition.dy < 0 ||
           editorLocalPosition.dy > editorSize.height) {
+        debugPrint('_updateInsertIndicator: 拖拽位置超出编辑器范围');
         setState(() {
           _insertIndicatorPosition = null;
         });
+        DragSortOverlay._insertionOffset = null;
         return;
       }
 
       // 获取精确的LineInfo
       final lineInfos = _getLineInfos(renderObject);
-      final insertionY = _findBestInsertionPosition(
+      debugPrint('_updateInsertIndicator: 找到 ${lineInfos.length} 行');
+
+      final result = _findBestInsertionPosition(
           lineInfos, editorLocalPosition.dy, editorGlobalPosition);
 
-      if (insertionY != null) {
+      if (result != null) {
+        debugPrint(
+            '_updateInsertIndicator: 设置插入位置 offset=${result.documentOffset}, y=${result.insertionY}');
         setState(() {
-          _insertIndicatorPosition = Offset(0, insertionY);
+          _insertIndicatorPosition = Offset(0, result.insertionY);
         });
+        DragSortOverlay._insertionOffset = result.documentOffset;
       } else {
+        debugPrint('_updateInsertIndicator: 未找到插入位置');
         setState(() {
           _insertIndicatorPosition = null;
         });
+        DragSortOverlay._insertionOffset = null;
       }
     } catch (e) {
+      debugPrint('_updateInsertIndicator: 发生异常: $e');
       setState(() {
         _insertIndicatorPosition = null;
       });
+      DragSortOverlay._insertionOffset = null;
     }
   }
 
   /// 找到最佳插入位置 - 精确计算TextLine间隙
-  double? _findBestInsertionPosition(
+  _InsertionResult? _findBestInsertionPosition(
       List<_LineInfo> lineInfos, double dragY, Offset editorGlobalPosition) {
     if (lineInfos.isEmpty) return null;
 
@@ -465,12 +595,16 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
     // 在第一行之前
     if (dragY < lineInfos.first.top + insertionMargin) {
-      return editorGlobalPosition.dy + lineInfos.first.top - 8;
+      final insertionY = editorGlobalPosition.dy + lineInfos.first.top - 8;
+      final documentOffset = _getDocumentOffsetForLineIndex(0);
+      return _InsertionResult(insertionY, documentOffset);
     }
 
     // 在最后一行之后
     if (dragY > lineInfos.last.bottom - insertionMargin) {
-      return editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+      final insertionY = editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+      final documentOffset = _getDocumentOffsetForLineIndex(lineInfos.length);
+      return _InsertionResult(insertionY, documentOffset);
     }
 
     // 在TextLine之间找最合适的位置
@@ -484,7 +618,9 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
       // 拖拽位置在间隙中
       if (dragY >= gapTop && dragY <= gapBottom) {
-        return editorGlobalPosition.dy + gapCenter;
+        final insertionY = editorGlobalPosition.dy + gapCenter;
+        final documentOffset = _getDocumentOffsetForLineIndex(i + 1);
+        return _InsertionResult(insertionY, documentOffset);
       }
 
       // 拖拽位置在当前行中，找最近的间隙
@@ -496,14 +632,53 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
         if (distanceToTopGap < distanceToBottomGap && i > 0) {
           final topGapCenter = (lineInfos[i - 1].bottom + currentLine.top) / 2;
-          return editorGlobalPosition.dy + topGapCenter;
+          final insertionY = editorGlobalPosition.dy + topGapCenter;
+          final documentOffset = _getDocumentOffsetForLineIndex(i);
+          return _InsertionResult(insertionY, documentOffset);
         } else {
-          return editorGlobalPosition.dy + gapCenter;
+          final insertionY = editorGlobalPosition.dy + gapCenter;
+          final documentOffset = _getDocumentOffsetForLineIndex(i + 1);
+          return _InsertionResult(insertionY, documentOffset);
         }
       }
     }
 
     // 默认插入到末尾
-    return editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+    final insertionY = editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+    final documentOffset = _getDocumentOffsetForLineIndex(lineInfos.length);
+    return _InsertionResult(insertionY, documentOffset);
+  }
+
+  /// 根据行索引获取文档偏移量
+  int _getDocumentOffsetForLineIndex(int lineIndex) {
+    try {
+      final document = widget.controller.document;
+      int currentLineIndex = 0;
+      int documentOffset = 0;
+
+      for (final node in document.root.children) {
+        if (node is Line) {
+          if (currentLineIndex == lineIndex) {
+            return documentOffset;
+          }
+          currentLineIndex++;
+          documentOffset += node.length;
+        } else if (node is Block) {
+          for (final line in node.children.cast<Line>()) {
+            if (currentLineIndex == lineIndex) {
+              return documentOffset;
+            }
+            currentLineIndex++;
+            documentOffset += line.length;
+          }
+        }
+      }
+
+      // 如果超出范围，返回文档长度（末尾）
+      return document.length;
+    } catch (e) {
+      debugPrint('_getDocumentOffsetForLineIndex error: $e');
+      return widget.controller.document.length;
+    }
   }
 }
