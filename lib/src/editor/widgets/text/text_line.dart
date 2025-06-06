@@ -20,6 +20,7 @@ import '../box.dart';
 import '../delegate.dart';
 import '../keyboard_listener.dart';
 import '../proxy.dart';
+import 'gesture_handler_mixin.dart';
 import 'text_selection.dart';
 
 class TextLine extends StatefulWidget {
@@ -819,7 +820,7 @@ class EditableTextLine extends RenderObjectWidget {
 enum TextLineSlot { leading, body }
 
 class RenderEditableTextLine extends RenderEditableBox
-    implements SwipeableComponent {
+    with GestureHandlerMixin {
   /// Creates new editable paragraph render box.
   RenderEditableTextLine(
     this.line,
@@ -860,39 +861,6 @@ class RenderEditableTextLine extends RenderEditableBox
   VoidCallback? onSwipeLeft;
   VoidCallback? onSwipeRight;
 
-  // 滑动状态
-  bool _isSwipingLeft = false;
-  bool _isSwipingRight = false;
-  double _swipeOffset = 0;
-  static const double _kMaxSwipeOffset = 40;
-
-  // 手势识别相关
-  Offset? _dragStartPosition;
-  double _totalDragDistance = 0;
-  static const double _swipeThreshold = 60; // 增加滑动阈值从30到60
-  static const double _moveThreshold = 15; // 增加移动阈值从10到15
-  static const double _horizontalToVerticalRatio = 2; // 水平移动必须是垂直移动的2倍以上
-  static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
-
-  // 滑动方向一致性检查
-  List<double> _horizontalMovements = []; // 记录最近几次的水平移动
-  int _consistentHorizontalCount = 0; // 连续相同方向的计数
-
-  // 长按拖拽相关属性
-  bool _isLongPressing = false;
-  bool _isDragging = false;
-  Timer? _longPressTimer;
-  static const Duration _longPressDuration =
-      Duration(milliseconds: 700); // 增加长按时间从500ms到800ms
-  VoidCallback? _onLongPressStart;
-  VoidCallback? _onDragEnd;
-
-  // 全局滑动状态管理器
-  final SwipeStateManager _swipeManager = SwipeStateManager();
-
-  // 选中状态
-  bool _isSelected = false;
-
   @override
   String get componentId => 'TextLine-${line.documentOffset}';
 
@@ -914,67 +882,16 @@ class RenderEditableTextLine extends RenderEditableBox
   @override
   Block? get block => null;
 
-  @override
-  void setSelected(bool selected) {
-    if (_isSelected != selected) {
-      _isSelected = selected;
-      markNeedsPaint();
-    }
-  }
+  // SwipeableComponent 接口实现已在 GestureHandlerMixin 中提供
 
   @override
-  bool performSwipe(SwipeDirection direction, double offset) {
-    switch (direction) {
-      case SwipeDirection.left:
-        if (!_isSwipingLeft) {
-          _isSwipingLeft = true;
-          _isSwipingRight = false;
-          _swipeOffset = 0.0;
-        }
-        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-        markNeedsPaint();
-        return true;
-      case SwipeDirection.right:
-        if (!_isSwipingRight) {
-          _isSwipingRight = true;
-          _isSwipingLeft = false;
-          _swipeOffset = 0.0;
-        }
-        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-        markNeedsPaint();
-        return true;
-    }
+  bool shouldPreventGestureWhenHasCursor() {
+    // 检查是否有光标显示在当前TextLine上
+    return hasFocus &&
+        cursorCont.show.value &&
+        containsCursor() &&
+        textSelection.isCollapsed;
   }
-
-  @override
-  void resetSwipe() {
-    _isSwipingLeft = false;
-    _isSwipingRight = false;
-    _swipeOffset = 0.0;
-    _dragStartPosition = null;
-    _totalDragDistance = 0.0;
-    _horizontalMovements.clear();
-    _consistentHorizontalCount = 0;
-    markNeedsPaint();
-  }
-
-  @override
-  void endSwipe() {
-    if (_swipeOffset > _kMaxSwipeOffset * 0.5) {
-      if (_isSwipingLeft && onSwipeLeft != null) {
-        onSwipeLeft!.call();
-      } else if (_isSwipingRight && onSwipeRight != null) {
-        onSwipeRight!.call();
-      }
-    }
-    resetSwipe();
-  }
-
-  /// 获取当前是否正在向左滑动
-  bool get isSwipingLeft => _isSwipingLeft;
-
-  /// 获取当前是否正在向右滑动
-  bool get isSwipingRight => _isSwipingRight;
 
   /// 设置滑动回调函数
   ///
@@ -984,6 +901,11 @@ class RenderEditableTextLine extends RenderEditableBox
       {VoidCallback? onSwipeLeft, VoidCallback? onSwipeRight}) {
     this.onSwipeLeft = onSwipeLeft;
     this.onSwipeRight = onSwipeRight;
+    // 同时设置混入类的回调
+    super.setSwipeCallbacks(
+      onSwipeLeft: onSwipeLeft,
+      onSwipeRight: onSwipeRight,
+    );
     markNeedsPaint();
   }
 
@@ -995,85 +917,10 @@ class RenderEditableTextLine extends RenderEditableBox
     VoidCallback? onLongPressStart,
     VoidCallback? onDragEnd,
   }) {
-    _onLongPressStart = onLongPressStart;
-    _onDragEnd = onDragEnd;
-  }
-
-  /// 开始长按检测
-  void _startLongPressDetection(Offset position) {
-    _longPressTimer?.cancel();
-    _longPressTimer = Timer(_longPressDuration, () {
-      if (!_isLongPressing && !_isDragging) {
-        // 在开始拖拽前，检查是否允许拖拽
-        if (!_swipeManager.shouldAllowDrag(this)) {
-          debugPrint('长按检测: 当前TextLine不允许拖拽（可能包含光标）');
-          return;
-        }
-
-        _isLongPressing = true;
-        final success = _swipeManager.startDrag(this);
-        if (!success) {
-          debugPrint('长按检测: SwipeStateManager拒绝拖拽');
-          _isLongPressing = false;
-          return;
-        }
-
-        _onLongPressStart?.call();
-        debugPrint('长按检测成功，进入长按状态: $_isLongPressing');
-
-        // 立即开始拖拽，不等待移动事件
-        _isDragging = true;
-        final globalPosition = localToGlobal(position);
-        debugPrint('长按后立即开始拖拽: globalPosition=$globalPosition');
-        _swipeManager.updateDrag(globalPosition);
-
-        markNeedsPaint();
-      }
-    });
-  }
-
-  /// 取消长按检测
-  void _cancelLongPressDetection() {
-    _longPressTimer?.cancel();
-    _longPressTimer = null;
-    if (_isLongPressing || _isDragging) {
-      _isLongPressing = false;
-      _isDragging = false;
-      _swipeManager.endDrag();
-      _onDragEnd?.call();
-      debugPrint('取消长按检测，重置状态');
-      markNeedsPaint();
-    }
-  }
-
-  /// 开始拖拽
-  void _startDragging(Offset position) {
-    if (_isLongPressing) {
-      _isDragging = true;
-      // 立即触发第一次拖拽更新，显示覆盖层
-      final globalPosition = localToGlobal(position);
-      debugPrint(
-          '_startDragging: 调用updateDrag, globalPosition=$globalPosition');
-      _swipeManager.updateDrag(globalPosition);
-      markNeedsPaint();
-    } else {
-      debugPrint('_startDragging: 不在长按状态，无法开始拖拽');
-    }
-  }
-
-  /// 更新拖拽位置
-  void _updateDragPosition(Offset localPosition) {
-    if (_isDragging) {
-      // 转换为全局坐标
-      final globalPosition = localToGlobal(localPosition);
-      debugPrint(
-          '_updateDragPosition: 调用updateDrag, globalPosition=$globalPosition');
-      _swipeManager.updateDrag(globalPosition);
-      // 移除对本地回调的依赖，直接使用SwipeStateManager
-      markNeedsPaint();
-    } else {
-      debugPrint('_updateDragPosition: 不在拖拽状态');
-    }
+    super.setDragCallbacks(
+      onLongPressStart: onLongPressStart,
+      onDragEnd: onDragEnd,
+    );
   }
 
   Iterable<RenderBox> get _children sync* {
@@ -1567,50 +1414,11 @@ class RenderEditableTextLine extends RenderEditableBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    // 处理滑动效果
-    Offset effectiveOffset = offset;
-    // 在聚焦状态下不显示滑动偏移效果
-    if (!hasFocus) {
-      if (_isSwipingLeft) {
-        effectiveOffset = offset.translate(-_swipeOffset, 0);
-      } else if (_isSwipingRight) {
-        effectiveOffset = offset.translate(_swipeOffset, 0);
-      }
-    }
+    // 使用混入类的绘制效果方法
+    paintSwipeEffects(context, offset);
 
-    // 绘制拖拽状态背景和阴影
-    if (_isDragging) {
-      // 拖拽时的背景色 - 与选中状态保持一致
-      final dragPaint = Paint()
-        ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
-
-      final dragRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx - 2.0,
-          effectiveOffset.dy,
-          size.width + 4.0,
-          size.height,
-        ),
-        const Radius.circular(4),
-      );
-      context.canvas.drawRRect(dragRRect, dragPaint);
-    }
-
-    // 绘制选中状态背景
-    if (_isSelected && !_isDragging) {
-      final selectedPaint = Paint()
-        ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
-      final selectedRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx - 2.0,
-          effectiveOffset.dy,
-          size.width + 4.0,
-          size.height,
-        ),
-        const Radius.circular(4),
-      );
-      context.canvas.drawRRect(selectedRRect, selectedPaint);
-    }
+    // 获取经过滑动效果调整的偏移量
+    final effectiveOffset = this.effectiveOffset;
 
     if (_leading != null) {
       if (textDirection == TextDirection.ltr) {
@@ -1628,30 +1436,6 @@ class RenderEditableTextLine extends RenderEditableBox
           ),
         );
       }
-    }
-
-    // 绘制滑动指示器（仅在非拖拽状态下且非聚焦状态下显示）
-    if ((_isSwipingLeft || _isSwipingRight) && !_isDragging && !hasFocus) {
-      final indicatorColor = _isSwipingLeft
-          ? const Color(0xFFF44336) // 红色
-          : const Color(0xFF4CAF50); // 绿色
-      final indicatorPaint = Paint()
-        ..color = indicatorColor.withValues(alpha: 0.3);
-      const indicatorWidth = 4.0;
-      final indicatorRect = _isSwipingLeft
-          ? Rect.fromLTWH(
-              effectiveOffset.dx - indicatorWidth,
-              effectiveOffset.dy,
-              indicatorWidth,
-              size.height,
-            )
-          : Rect.fromLTWH(
-              effectiveOffset.dx + size.width,
-              effectiveOffset.dy,
-              indicatorWidth,
-              size.height,
-            );
-      context.canvas.drawRect(indicatorRect, indicatorPaint);
     }
 
     final boxDecoration = decoration;
@@ -1815,242 +1599,16 @@ class RenderEditableTextLine extends RenderEditableBox
   void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
     assert(debugHandleEvent(event, entry));
 
-    // 添加事件类型调试
-    debugPrint('handleEvent: ${event.runtimeType}, isDragging=$_isDragging');
-
     // 如果没有滑动回调，不处理手势事件
     if (onSwipeLeft == null && onSwipeRight == null) {
       return;
     }
 
-    // 检查是否有光标显示在当前TextLine上 - 如果有则禁用长按拖拽
-    final hasCursorOnThisLine = hasFocus &&
-        cursorCont.show.value &&
-        containsCursor() &&
-        textSelection.isCollapsed;
-
-    debugPrint(
-        '光标状态检查: hasFocus=$hasFocus, cursorShow=${cursorCont.show.value}, containsCursor=${containsCursor()}, isCollapsed=${textSelection.isCollapsed}, hasCursorOnThisLine=$hasCursorOnThisLine');
-
-    // 新增：聚焦时的限制检查
-    if (hasFocus) {
-      // 1. 聚焦时不允许所有TextLine执行左右滑动操作
-      // 如果是滑动相关的手势，直接返回不处理
-      if (event is PointerMoveEvent &&
-          _dragStartPosition != null &&
-          !_isDragging) {
-        final delta = event.localPosition - _dragStartPosition!;
-        final horizontalDistance = delta.dx.abs();
-        final verticalDistance = delta.dy.abs();
-
-        // 如果是明显的水平滑动手势，在聚焦状态下直接阻止
-        if (horizontalDistance > _moveThreshold &&
-            horizontalDistance >
-                verticalDistance * _horizontalToVerticalRatio) {
-          debugPrint('聚焦状态下禁用滑动手势');
-          return;
-        }
-      }
-
-      // 2. 聚焦时不允许当前选中的TextLine执行长按拖动操作
-      if (hasCursorOnThisLine) {
-        debugPrint('当前TextLine被选中且聚焦，禁用所有手势操作');
-        return;
-      }
-    }
-
-    // 如果全局正在拖拽或滑动，消费此事件避免滚动冲突
-    if (_swipeManager.shouldPreventOtherGestures() &&
-        event is PointerMoveEvent) {
-      // 但是如果是当前组件在拖拽或滑动，则继续处理
-      if (_isDragging || _isSwipingLeft || _isSwipingRight) {
-        debugPrint('当前组件正在操作，继续处理移动事件');
-        // 继续处理，不return
-      } else {
-        // 消费掉移动事件，防止触发滚动
-        debugPrint('阻止滚动，消费移动事件 - 其他组件正在操作');
-        return;
-      }
-    }
-
-    if (event is PointerDownEvent) {
-      _dragStartPosition = event.localPosition;
-      _totalDragDistance = 0.0;
-      _horizontalMovements.clear();
-      _consistentHorizontalCount = 0;
-
-      // 在聚焦状态下：
-      // - 如果是当前选中的TextLine，不启动任何检测
-      // - 如果是其他TextLine，只允许长按检测（不允许滑动）
-      if (hasFocus) {
-        if (hasCursorOnThisLine) {
-          debugPrint('当前TextLine被选中且聚焦，不启动任何手势检测');
-          return;
-        } else {
-          // 其他TextLine在聚焦状态下只允许长按拖动，不允许滑动
-          _startLongPressDetection(event.localPosition);
-          debugPrint('其他TextLine在聚焦状态下开始长按检测: ${event.localPosition}');
-          return;
-        }
-      }
-
-      // 非聚焦状态下的原有逻辑：只有在没有光标显示时才启动长按检测
-      if (!hasCursorOnThisLine) {
-        _startLongPressDetection(event.localPosition);
-        debugPrint('开始长按检测: ${event.localPosition}');
-      } else {
-        debugPrint('有光标显示，跳过长按检测');
-      }
-    } else if (event is PointerMoveEvent && _dragStartPosition != null) {
-      final delta = event.localPosition - _dragStartPosition!;
-      final horizontalDistance = delta.dx.abs();
-      final verticalDistance = delta.dy.abs();
-      _totalDragDistance = horizontalDistance;
-
-      // 记录水平移动方向
-      if (horizontalDistance > 5.0) {
-        // 只记录明显的水平移动
-        _horizontalMovements.add(delta.dx);
-        if (_horizontalMovements.length > 5) {
-          _horizontalMovements.removeAt(0); // 保持最近5次移动记录
-        }
-
-        // 检查方向一致性
-        if (_horizontalMovements.length >= 2) {
-          final lastMovement = _horizontalMovements.last;
-          final secondLastMovement =
-              _horizontalMovements[_horizontalMovements.length - 2];
-          if ((lastMovement > 0) == (secondLastMovement > 0)) {
-            _consistentHorizontalCount++;
-          } else {
-            _consistentHorizontalCount = 0;
-          }
-        }
-      }
-
-      debugPrint(
-          '移动事件: hDistance=$horizontalDistance, vDistance=$verticalDistance, ratio=${horizontalDistance / (verticalDistance + 1)}, consistent=$_consistentHorizontalCount, isLongPressing=$_isLongPressing, isDragging=$_isDragging');
-
-      // 第一优先级：检查是否正在拖拽
-      if (_isDragging) {
-        debugPrint('拖拽中，更新位置: position=${event.localPosition}');
-        _updateDragPosition(event.localPosition);
-        return; // 拖拽时消费事件，防止滚动和滑动
-      }
-
-      // 第二优先级：检查是否可以开始拖拽（长按后首次移动）
-      if (_isLongPressing &&
-          !_isDragging &&
-          _totalDragDistance > _moveThreshold) {
-        debugPrint('长按后首次移动，开始拖拽: position=${event.localPosition}');
-        _startDragging(event.localPosition);
-        _updateDragPosition(event.localPosition);
-        return; // 拖拽时消费事件，防止滚动和滑动
-      }
-
-      // 第三优先级：滑动手势处理（仅在非长按状态下）
-      // 增加严格的滑动检测条件
-      if (!_isLongPressing &&
-          !_isDragging &&
-          _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
-        debugPrint(
-            '处理滑动手势，distance=$_totalDragDistance, ratio=${horizontalDistance / (verticalDistance + 1)}, hasFocus=$hasFocus');
-        if (delta.dx < 0) {
-          _swipeManager.startSwipe(
-              this, SwipeDirection.left, _totalDragDistance);
-        } else {
-          _swipeManager.startSwipe(
-              this, SwipeDirection.right, _totalDragDistance);
-        }
-      }
-    } else if (event is PointerUpEvent && _dragStartPosition != null) {
-      debugPrint('抬起事件: isDragging=$_isDragging');
-
-      if (_isDragging) {
-        // 拖拽结束 - 直接结束，不触发滑动
-        _cancelLongPressDetection();
-        debugPrint('拖拽结束');
-        return;
-      } else {
-        // 处理滑动手势结束
-        final delta = event.localPosition - _dragStartPosition!;
-        final horizontalDistance = delta.dx.abs();
-        final verticalDistance = delta.dy.abs();
-
-        // 检查是否满足滑动条件（无论是否聚焦都进行检查）
-        if (!_isLongPressing &&
-            !_isDragging &&
-            _shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
-          SwipeDirection direction;
-          if (delta.dx < 0) {
-            // 左滑
-            direction = SwipeDirection.left;
-            // 只有在非聚焦状态下才触发滑动回调
-            if (!hasFocus) {
-              onSwipeLeft?.call();
-            }
-          } else {
-            // 右滑
-            direction = SwipeDirection.right;
-            // 只有在非聚焦状态下才触发滑动回调
-            if (!hasFocus) {
-              onSwipeRight?.call();
-            }
-          }
-
-          // 无论是否聚焦都触发组件选中回调
-          _swipeManager.selectComponent(this, direction);
-          debugPrint(
-              '触发 onComponentSelected 回调: direction=$direction, hasFocus=$hasFocus');
-        }
-
-        // 结束滑动和长按检测
-        _swipeManager.endSwipe(this);
-        _cancelLongPressDetection();
-
-        // 重置滑动检测状态
-        _horizontalMovements.clear();
-        _consistentHorizontalCount = 0;
-      }
-    }
+    // 使用混入类的通用手势处理逻辑
+    handleGestureEvent(event, entry);
   }
 
-  /// 检查是否应该触发滑动开始
-  bool _shouldTriggerSwipe(double horizontalDistance, double verticalDistance) {
-    // 条件1：水平移动距离必须超过最小阈值
-    if (horizontalDistance < _moveThreshold) return false;
-
-    // 条件2：水平移动必须明显大于垂直移动
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < _horizontalToVerticalRatio) return false;
-
-    // 条件3：需要有一定的方向一致性
-    if (_consistentHorizontalCount < _consistentDirectionSamples - 2) {
-      return false;
-    }
-
-    debugPrint(
-        '滑动触发检查: h=$horizontalDistance, v=$verticalDistance, ratio=$ratio, consistent=$_consistentHorizontalCount');
-    return true;
-  }
-
-  /// 检查是否应该完成滑动操作
-  bool _shouldCompleteSwipe(
-      double horizontalDistance, double verticalDistance) {
-    // 条件1：水平移动距离必须超过完成阈值
-    if (horizontalDistance < _swipeThreshold) return false;
-
-    // 条件2：水平移动必须明显大于垂直移动
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < _horizontalToVerticalRatio) return false;
-
-    // 条件3：需要有足够的方向一致性
-    if (_consistentHorizontalCount < _consistentDirectionSamples) return false;
-
-    debugPrint(
-        '滑动完成检查: h=$horizontalDistance, v=$verticalDistance, ratio=$ratio, consistent=$_consistentHorizontalCount');
-    return true;
-  }
+  // 滑动检测方法已在 GestureHandlerMixin 中提供
 
   @override
   Rect getLocalRectForCaret(TextPosition position) {
@@ -2087,24 +1645,6 @@ class RenderEditableTextLine extends RenderEditableBox
 
   @override
   Rect getCaretPrototype(TextPosition position) => _caretPrototype;
-
-  @override
-  bool startDrag() {
-    if (_isLongPressing) {
-      _isDragging = true;
-      markNeedsPaint();
-      return true;
-    }
-    return false;
-  }
-
-  @override
-  void endDrag() {
-    _cancelLongPressDetection();
-  }
-
-  /// 检查是否处于长按状态
-  bool get isLongPressing => _isLongPressing;
 
   /// 添加用于测试的简单方法
   void debugLongPress() {

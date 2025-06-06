@@ -20,6 +20,7 @@ import '../default_leading_components/leading_components.dart';
 import '../default_styles.dart';
 import '../delegate.dart';
 import '../link.dart';
+import 'gesture_handler_mixin.dart';
 import 'swipe_manager.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
@@ -433,7 +434,8 @@ class EditableTextBlock extends StatelessWidget {
 }
 
 class RenderEditableTextBlock extends RenderEditableContainerBox
-    implements RenderEditableBox, SwipeableComponent {
+    with GestureHandlerMixin
+    implements RenderEditableBox {
   RenderEditableTextBlock({
     required Block block,
     required super.textDirection,
@@ -447,7 +449,6 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
         _configuration = ImageConfiguration(textDirection: textDirection),
         _savedPadding = padding,
         _contentPadding = contentPadding,
-        _swipeManager = SwipeStateManager(),
         super(
           container: block,
           padding: padding.add(contentPadding),
@@ -459,24 +460,12 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   // 新增：聚焦状态
   bool hasFocus;
 
-  // 滑动相关属性
-  bool _isSwipingLeft = false;
-  bool _isSwipingRight = false;
-  double _swipeOffset = 0;
-  static const double _kMaxSwipeOffset = 40;
-  Offset? _dragStartPosition;
-  double _totalDragDistance = 0;
-  static const double _swipeThreshold = 60; // 增加滑动阈值从30到60
-  static const double _moveThreshold = 15; // 增加移动阈值
-  static const double _horizontalToVerticalRatio = 2; // 水平移动必须是垂直移动的2倍以上
-  static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
-
-  // 滑动方向一致性检查
-  final List<double> _horizontalMovements = []; // 记录最近几次的水平移动
-  int _consistentHorizontalCount = 0; // 连续相同方向的计数
-
-  // 选中状态
-  bool _isSelected = false;
+  @override
+  GestureConfig get gestureConfig => const GestureConfig(
+        enableSwipe: false, // TextBlock 禁用滑动功能
+        enableLongPress: true,
+        enableDrag: true,
+      );
 
   @override
   String get componentId => 'TextBlock-${container.documentOffset}';
@@ -499,75 +488,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   @override
   Block get block => container as Block;
 
-  @override
-  void setSelected(bool selected) {
-    if (_isSelected != selected) {
-      _isSelected = selected;
-      markNeedsPaint();
-    }
-  }
-
-  @override
-  bool performSwipe(SwipeDirection direction, double offset) {
-    switch (direction) {
-      case SwipeDirection.left:
-        if (!_isSwipingLeft) {
-          _isSwipingLeft = true;
-          _isSwipingRight = false;
-          _swipeOffset = 0.0;
-        }
-        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-        markNeedsPaint();
-        return true;
-      case SwipeDirection.right:
-        if (!_isSwipingRight) {
-          _isSwipingRight = true;
-          _isSwipingLeft = false;
-          _swipeOffset = 0.0;
-        }
-        _swipeOffset = offset.clamp(0.0, _kMaxSwipeOffset);
-        markNeedsPaint();
-        return true;
-    }
-  }
-
-  @override
-  void resetSwipe() {
-    _isSwipingLeft = false;
-    _isSwipingRight = false;
-    _swipeOffset = 0.0;
-    _dragStartPosition = null;
-    _totalDragDistance = 0.0;
-    _horizontalMovements.clear();
-    _consistentHorizontalCount = 0;
-    markNeedsPaint();
-  }
-
-  @override
-  void endSwipe() {
-    // TextBlock 的滑动结束逻辑可以在这里实现
-    resetSwipe();
-  }
-
-  @override
-  bool startDrag() {
-    // 在开始拖拽前，检查是否允许拖拽
-    if (!_swipeManager.shouldAllowDrag(this)) {
-      debugPrint('TextBlock.startDrag: 当前Block不允许拖拽');
-      return false;
-    }
-
-    // TextBlock的拖拽排序功能
-    // 可以在这里实现拖拽排序的开始逻辑
-    markNeedsPaint();
-    return true;
-  }
-
-  @override
-  void endDrag() {
-    // TextBlock的拖拽排序结束逻辑
-    markNeedsPaint();
-  }
+  // SwipeableComponent 接口实现已在 GestureHandlerMixin 中提供
 
   set contentPadding(EdgeInsets value) {
     if (_contentPadding == value) return;
@@ -603,7 +524,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
     markNeedsPaint();
   }
 
-  final SwipeStateManager _swipeManager;
+  // SwipeStateManager 已在 GestureHandlerMixin 中提供
 
   @override
   TextRange getLineBoundary(TextPosition position) {
@@ -792,53 +713,11 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    // 处理滑动效果
-    Offset effectiveOffset = offset;
-    if (_isSwipingLeft) {
-      effectiveOffset = offset.translate(-_swipeOffset, 0);
-    } else if (_isSwipingRight) {
-      effectiveOffset = offset.translate(_swipeOffset, 0);
-    }
+    // 使用混入类的绘制效果方法
+    paintSwipeEffects(context, offset);
 
-    // 绘制选中状态背景
-    if (_isSelected) {
-      final selectedPaint = Paint()
-        ..color = const Color(0xFF2196F3).withOpacity(0.2); // 增加透明度从0.1到0.2
-      // 增加左右2px的padding和4px圆角
-      final selectedRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx - 2.0,
-          effectiveOffset.dy,
-          size.width + 4.0,
-          size.height,
-        ),
-        const Radius.circular(4),
-      );
-      context.canvas.drawRRect(selectedRRect, selectedPaint);
-    }
-
-    // 绘制滑动指示器
-    if (_isSwipingLeft || _isSwipingRight) {
-      final indicatorColor = _isSwipingLeft
-          ? const Color(0xFFF44336) // 红色
-          : const Color(0xFF4CAF50); // 绿色
-      final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
-      const indicatorWidth = 4.0;
-      final indicatorRect = _isSwipingLeft
-          ? Rect.fromLTWH(
-              effectiveOffset.dx - indicatorWidth,
-              effectiveOffset.dy,
-              indicatorWidth,
-              size.height,
-            )
-          : Rect.fromLTWH(
-              effectiveOffset.dx + size.width,
-              effectiveOffset.dy,
-              indicatorWidth,
-              size.height,
-            );
-      context.canvas.drawRect(indicatorRect, indicatorPaint);
-    }
+    // 获取经过滑动效果调整的偏移量
+    final effectiveOffset = this.effectiveOffset;
 
     _paintDecoration(context, effectiveOffset);
     defaultPaint(context, effectiveOffset);
@@ -879,139 +758,19 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   void handleEvent(PointerEvent event, BoxHitTestEntry entry) {
     assert(debugHandleEvent(event, entry));
 
-    // 新增：聚焦时禁用所有Block级别的滑动操作
-    if (hasFocus) {
-      debugPrint('编辑器聚焦状态下，TextBlock禁用滑动手势');
-      return;
-    }
-
+    // 检查是否点击在任何TextLine上，如果是则不处理Block级别的手势
     if (event is PointerDownEvent) {
-      _dragStartPosition = event.localPosition;
-      _totalDragDistance = 0.0;
-      _horizontalMovements.clear();
-      _consistentHorizontalCount = 0;
-
-      // 检查是否点击在任何TextLine上
       bool hitTextLine = _isPositionOnTextLine(event.localPosition);
       if (hitTextLine) {
-        // 如果点击在TextLine上，不处理Block级别的手势
         return;
       }
-    } else if (event is PointerMoveEvent && _dragStartPosition != null) {
-      final delta = event.localPosition - _dragStartPosition!;
-      final horizontalDistance = delta.dx.abs();
-      final verticalDistance = delta.dy.abs();
-      _totalDragDistance = horizontalDistance;
-
-      // 记录水平移动方向
-      if (horizontalDistance > 5.0) {
-        // 只记录明显的水平移动
-        _horizontalMovements.add(delta.dx);
-        if (_horizontalMovements.length > 5) {
-          _horizontalMovements.removeAt(0); // 保持最近5次移动记录
-        }
-
-        // 检查方向一致性
-        if (_horizontalMovements.length >= 2) {
-          final lastMovement = _horizontalMovements.last;
-          final secondLastMovement =
-              _horizontalMovements[_horizontalMovements.length - 2];
-          if ((lastMovement > 0) == (secondLastMovement > 0)) {
-            _consistentHorizontalCount++;
-          } else {
-            _consistentHorizontalCount = 0;
-          }
-        }
-      }
-
-      // 检查手势是否开始在TextLine上
-      bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
-      if (startedOnTextLine) {
-        // 如果手势开始在TextLine上，不处理Block级别的滑动
-        return;
-      }
-
-      // 检查当前位置是否在TextLine上
-      bool currentOnTextLine = _isPositionOnTextLine(event.localPosition);
-      if (currentOnTextLine) {
-        // 如果当前在TextLine上，不处理Block级别的滑动
-        return;
-      }
-
-      // 只在完全不在TextLine区域内的手势且满足严格条件才处理Block级别的滑动
-      if (_shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
-        if (delta.dx < 0) {
-          _swipeManager.startSwipe(
-              this, SwipeDirection.left, _totalDragDistance);
-        } else {
-          _swipeManager.startSwipe(
-              this, SwipeDirection.right, _totalDragDistance);
-        }
-      }
-    } else if (event is PointerUpEvent && _dragStartPosition != null) {
-      final delta = event.localPosition - _dragStartPosition!;
-      final horizontalDistance = delta.dx.abs();
-      final verticalDistance = delta.dy.abs();
-
-      // 检查手势是否开始在TextLine上
-      bool startedOnTextLine = _isPositionOnTextLine(_dragStartPosition!);
-      if (startedOnTextLine) {
-        // 如果手势开始在TextLine上，不处理Block级别的滑动
-        return;
-      }
-
-      if (_shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
-        SwipeDirection direction;
-        if (delta.dx < 0) {
-          direction = SwipeDirection.left;
-        } else {
-          direction = SwipeDirection.right;
-        }
-
-        // 选中当前组件
-        _swipeManager.selectComponent(this, direction);
-      }
-
-      // 结束滑动
-      _swipeManager.endSwipe(this);
-
-      // 重置滑动检测状态
-      _horizontalMovements.clear();
-      _consistentHorizontalCount = 0;
     }
+
+    // 使用混入类的通用手势处理逻辑
+    handleGestureEvent(event, entry);
   }
 
-  /// 检查是否应该触发滑动开始
-  bool _shouldTriggerSwipe(double horizontalDistance, double verticalDistance) {
-    // 条件1：水平移动距离必须超过最小阈值
-    if (horizontalDistance < _moveThreshold) return false;
-
-    // 条件2：水平移动必须明显大于垂直移动
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < _horizontalToVerticalRatio) return false;
-
-    // 条件3：需要有一定的方向一致性
-    if (_consistentHorizontalCount < _consistentDirectionSamples - 2)
-      return false;
-
-    return true;
-  }
-
-  /// 检查是否应该完成滑动操作
-  bool _shouldCompleteSwipe(
-      double horizontalDistance, double verticalDistance) {
-    // 条件1：水平移动距离必须超过完成阈值
-    if (horizontalDistance < _swipeThreshold) return false;
-
-    // 条件2：水平移动必须明显大于垂直移动
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < _horizontalToVerticalRatio) return false;
-
-    // 条件3：需要有足够的方向一致性
-    if (_consistentHorizontalCount < _consistentDirectionSamples) return false;
-
-    return true;
-  }
+  // 滑动检测方法已在 GestureHandlerMixin 中提供
 
   /// 检查位置是否在任何TextLine上
   bool _isPositionOnTextLine(Offset position) {
