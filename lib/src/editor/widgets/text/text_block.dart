@@ -462,17 +462,17 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   // 滑动相关属性
   bool _isSwipingLeft = false;
   bool _isSwipingRight = false;
-  double _swipeOffset = 0.0;
-  static const double _kMaxSwipeOffset = 40.0;
+  double _swipeOffset = 0;
+  static const double _kMaxSwipeOffset = 40;
   Offset? _dragStartPosition;
-  double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 60.0; // 增加滑动阈值从30到60
-  static const double _moveThreshold = 15.0; // 增加移动阈值
-  static const double _horizontalToVerticalRatio = 2.0; // 水平移动必须是垂直移动的2倍以上
+  double _totalDragDistance = 0;
+  static const double _swipeThreshold = 60; // 增加滑动阈值从30到60
+  static const double _moveThreshold = 15; // 增加移动阈值
+  static const double _horizontalToVerticalRatio = 2; // 水平移动必须是垂直移动的2倍以上
   static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
 
   // 滑动方向一致性检查
-  List<double> _horizontalMovements = []; // 记录最近几次的水平移动
+  final List<double> _horizontalMovements = []; // 记录最近几次的水平移动
   int _consistentHorizontalCount = 0; // 连续相同方向的计数
 
   // 选中状态
@@ -812,7 +812,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
           size.width + 4.0,
           size.height,
         ),
-        const Radius.circular(4.0),
+        const Radius.circular(4),
       );
       context.canvas.drawRRect(selectedRRect, selectedPaint);
     }

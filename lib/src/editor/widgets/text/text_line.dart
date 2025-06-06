@@ -1,6 +1,6 @@
+import 'dart:async' show Timer;
 import 'dart:collection';
 import 'dart:math' as math;
-import 'dart:async' show Timer;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
@@ -863,15 +863,15 @@ class RenderEditableTextLine extends RenderEditableBox
   // 滑动状态
   bool _isSwipingLeft = false;
   bool _isSwipingRight = false;
-  double _swipeOffset = 0.0;
-  static const double _kMaxSwipeOffset = 40.0;
+  double _swipeOffset = 0;
+  static const double _kMaxSwipeOffset = 40;
 
   // 手势识别相关
   Offset? _dragStartPosition;
-  double _totalDragDistance = 0.0;
-  static const double _swipeThreshold = 60.0; // 增加滑动阈值从30到60
-  static const double _moveThreshold = 15.0; // 增加移动阈值从10到15
-  static const double _horizontalToVerticalRatio = 2.0; // 水平移动必须是垂直移动的2倍以上
+  double _totalDragDistance = 0;
+  static const double _swipeThreshold = 60; // 增加滑动阈值从30到60
+  static const double _moveThreshold = 15; // 增加移动阈值从10到15
+  static const double _horizontalToVerticalRatio = 2; // 水平移动必须是垂直移动的2倍以上
   static const int _consistentDirectionSamples = 3; // 需要连续3次相同方向的移动
 
   // 滑动方向一致性检查
@@ -1569,17 +1569,20 @@ class RenderEditableTextLine extends RenderEditableBox
   void paint(PaintingContext context, Offset offset) {
     // 处理滑动效果
     Offset effectiveOffset = offset;
-    if (_isSwipingLeft) {
-      effectiveOffset = offset.translate(-_swipeOffset, 0);
-    } else if (_isSwipingRight) {
-      effectiveOffset = offset.translate(_swipeOffset, 0);
+    // 在聚焦状态下不显示滑动偏移效果
+    if (!hasFocus) {
+      if (_isSwipingLeft) {
+        effectiveOffset = offset.translate(-_swipeOffset, 0);
+      } else if (_isSwipingRight) {
+        effectiveOffset = offset.translate(_swipeOffset, 0);
+      }
     }
 
     // 绘制拖拽状态背景和阴影
     if (_isDragging) {
       // 拖拽时的背景色 - 与选中状态保持一致
       final dragPaint = Paint()
-        ..color = const Color(0xFF2196F3).withOpacity(0.2);
+        ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
 
       final dragRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(
@@ -1588,7 +1591,7 @@ class RenderEditableTextLine extends RenderEditableBox
           size.width + 4.0,
           size.height,
         ),
-        const Radius.circular(4.0),
+        const Radius.circular(4),
       );
       context.canvas.drawRRect(dragRRect, dragPaint);
     }
@@ -1596,7 +1599,7 @@ class RenderEditableTextLine extends RenderEditableBox
     // 绘制选中状态背景
     if (_isSelected && !_isDragging) {
       final selectedPaint = Paint()
-        ..color = const Color(0xFF2196F3).withOpacity(0.2);
+        ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
       final selectedRRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(
           effectiveOffset.dx - 2.0,
@@ -1604,7 +1607,7 @@ class RenderEditableTextLine extends RenderEditableBox
           size.width + 4.0,
           size.height,
         ),
-        const Radius.circular(4.0),
+        const Radius.circular(4),
       );
       context.canvas.drawRRect(selectedRRect, selectedPaint);
     }
@@ -1627,12 +1630,13 @@ class RenderEditableTextLine extends RenderEditableBox
       }
     }
 
-    // 绘制滑动指示器（仅在非拖拽状态下显示）
-    if ((_isSwipingLeft || _isSwipingRight) && !_isDragging) {
+    // 绘制滑动指示器（仅在非拖拽状态下且非聚焦状态下显示）
+    if ((_isSwipingLeft || _isSwipingRight) && !_isDragging && !hasFocus) {
       final indicatorColor = _isSwipingLeft
           ? const Color(0xFFF44336) // 红色
           : const Color(0xFF4CAF50); // 绿色
-      final indicatorPaint = Paint()..color = indicatorColor.withOpacity(0.3);
+      final indicatorPaint = Paint()
+        ..color = indicatorColor.withValues(alpha: 0.3);
       const indicatorWidth = 4.0;
       final indicatorRect = _isSwipingLeft
           ? Rect.fromLTWH(
@@ -1944,14 +1948,13 @@ class RenderEditableTextLine extends RenderEditableBox
         return; // 拖拽时消费事件，防止滚动和滑动
       }
 
-      // 第三优先级：滑动手势处理（仅在非长按状态下且非聚焦状态下）
+      // 第三优先级：滑动手势处理（仅在非长按状态下）
       // 增加严格的滑动检测条件
       if (!_isLongPressing &&
           !_isDragging &&
-          !hasFocus && // 新增：聚焦状态下不允许滑动
           _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
         debugPrint(
-            '处理滑动手势，distance=$_totalDragDistance, ratio=${horizontalDistance / (verticalDistance + 1)}');
+            '处理滑动手势，distance=$_totalDragDistance, ratio=${horizontalDistance / (verticalDistance + 1)}, hasFocus=$hasFocus');
         if (delta.dx < 0) {
           _swipeManager.startSwipe(
               this, SwipeDirection.left, _totalDragDistance);
@@ -1969,29 +1972,36 @@ class RenderEditableTextLine extends RenderEditableBox
         debugPrint('拖拽结束');
         return;
       } else {
-        // 处理滑动手势结束（仅在非聚焦状态下）
+        // 处理滑动手势结束
         final delta = event.localPosition - _dragStartPosition!;
         final horizontalDistance = delta.dx.abs();
         final verticalDistance = delta.dy.abs();
 
-        // 只有在非长按状态、非聚焦状态且满足严格滑动条件时才处理滑动
+        // 检查是否满足滑动条件（无论是否聚焦都进行检查）
         if (!_isLongPressing &&
             !_isDragging &&
-            !hasFocus && // 新增：聚焦状态下不允许滑动
             _shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
           SwipeDirection direction;
           if (delta.dx < 0) {
             // 左滑
             direction = SwipeDirection.left;
-            onSwipeLeft?.call();
+            // 只有在非聚焦状态下才触发滑动回调
+            if (!hasFocus) {
+              onSwipeLeft?.call();
+            }
           } else {
             // 右滑
             direction = SwipeDirection.right;
-            onSwipeRight?.call();
+            // 只有在非聚焦状态下才触发滑动回调
+            if (!hasFocus) {
+              onSwipeRight?.call();
+            }
           }
 
-          // 选中当前组件
+          // 无论是否聚焦都触发组件选中回调
           _swipeManager.selectComponent(this, direction);
+          debugPrint(
+              '触发 onComponentSelected 回调: direction=$direction, hasFocus=$hasFocus');
         }
 
         // 结束滑动和长按检测
@@ -2015,8 +2025,9 @@ class RenderEditableTextLine extends RenderEditableBox
     if (ratio < _horizontalToVerticalRatio) return false;
 
     // 条件3：需要有一定的方向一致性
-    if (_consistentHorizontalCount < _consistentDirectionSamples - 2)
+    if (_consistentHorizontalCount < _consistentDirectionSamples - 2) {
       return false;
+    }
 
     debugPrint(
         '滑动触发检查: h=$horizontalDistance, v=$verticalDistance, ratio=$ratio, consistent=$_consistentHorizontalCount');

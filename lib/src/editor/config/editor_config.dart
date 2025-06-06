@@ -6,11 +6,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:meta/meta.dart' show experimental;
-import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
 
 import '../../../flutter_quill.dart' show Block, Line;
 import '../../document/nodes/node.dart';
+import '../../editor/widgets/text/swipe_manager.dart';
 import '../../toolbar/theme/quill_dialog_theme.dart';
 import '../embed/embed_editor_builder.dart';
 import '../raw_editor/builders/leading_block_builder.dart';
@@ -23,11 +22,6 @@ import '../widgets/link.dart' hide linkPrefixes;
 import '../widgets/text/magnifier.dart';
 import '../widgets/text/utils/text_block_utils.dart';
 import 'search_config.dart';
-import '../../common/utils/platform.dart';
-import '../../controller/quill_controller.dart';
-import '../../editor/widgets/text/swipe_manager.dart';
-import '../widgets/cursor.dart';
-import '../widgets/text/text_selection.dart';
 
 // IMPORTANT For project authors: The QuillEditorConfig.copyWith()
 // should be manually updated each time we add or remove a property

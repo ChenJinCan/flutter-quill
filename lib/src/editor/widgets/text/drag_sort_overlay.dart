@@ -3,30 +3,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../controller/quill_controller.dart';
-import '../../../document/document.dart';
-import '../../../document/nodes/line.dart';
 import '../../../document/nodes/block.dart';
+import '../../../document/nodes/line.dart';
 import 'swipe_manager.dart';
 
 /// 用于存储TextLine位置信息的辅助类
 class _LineInfo {
-  final double top;
-  final double bottom;
-  final double height;
-
   _LineInfo({
     required this.top,
     required this.bottom,
     required this.height,
   });
+  final double top;
+  final double bottom;
+  final double height;
 }
 
 /// 用于存储插入位置结果的辅助类
 class _InsertionResult {
+  _InsertionResult(
+    this.insertionY,
+    this.documentOffset,
+  );
   final double insertionY;
   final int documentOffset;
-
-  _InsertionResult(this.insertionY, this.documentOffset);
 }
 
 /// 拖拽排序覆盖层 - 精简版本，模仿 Notion/Craft 交互
@@ -34,15 +34,14 @@ class DragSortOverlay {
   static OverlayEntry? _overlayEntry;
   static SwipeableComponent? _draggingComponent;
   static QuillController? _controller;
-  static GlobalKey? _editorKey;
   static ScrollController? _scrollController;
   static BuildContext? _context;
 
   // 边缘滚动相关
   static Timer? _scrollTimer;
   static bool _isScrolling = false;
-  static const double _edgeZone = 150.0; // 边缘检测区域
-  static const double _scrollSpeed = 200.0; // 滚动速度（像素/秒）
+  static const double _edgeZone = 150; // 边缘检测区域
+  static const double _scrollSpeed = 200; // 滚动速度（像素/秒）
 
   // 当前拖拽位置
   static Offset? _currentPosition;
@@ -71,7 +70,6 @@ class DragSortOverlay {
 
     _draggingComponent = component;
     _controller = controller;
-    _editorKey = editorKey;
     _scrollController = scrollController;
     _currentPosition = initialGlobalPosition;
     _context = context;
@@ -100,7 +98,6 @@ class DragSortOverlay {
     _overlayEntry = null;
     _draggingComponent = null;
     _controller = null;
-    _editorKey = null;
     _scrollController = null;
     _currentPosition = null;
     _context = null;
@@ -208,7 +205,7 @@ class DragSortOverlay {
 
   /// 获取准确的AppBar高度
   static double _getAppBarHeight() {
-    if (_context == null) return 56.0;
+    if (_context == null) return 56;
 
     try {
       final scaffold = Scaffold.maybeOf(_context!);
@@ -228,7 +225,7 @@ class DragSortOverlay {
       // 静默处理错误
     }
 
-    return 56.0; // 默认AppBar高度
+    return 56; // 默认AppBar高度
   }
 
   /// 检查边缘滚动

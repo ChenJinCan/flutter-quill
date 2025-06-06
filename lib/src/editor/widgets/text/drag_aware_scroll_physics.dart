@@ -45,7 +45,7 @@ class DragAwareScrollPhysics extends ScrollPhysics {
   double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
     // 如果正在拖拽或滑动，返回0阻止滚动
     if (swipeManager?.shouldPreventOtherGestures() == true) {
-      return 0.0;
+      return 0;
     }
     return super.applyPhysicsToUserOffset(position, offset);
   }
