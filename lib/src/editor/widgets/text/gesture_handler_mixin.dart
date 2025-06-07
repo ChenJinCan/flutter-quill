@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -140,13 +141,19 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 如果全局正在拖拽或滑动，消费事件避免滚动冲突
+    // 如果全局正在拖拽或滑动，但当前组件不是操作者，则消费事件避免滚动冲突
+    // 但是要允许拖拽时的边缘滚动
     if (_swipeManager.shouldPreventOtherGestures() &&
-        event is PointerMoveEvent) {
-      if (_isDragging || _isSwipingLeft || _isSwipingRight) {
-        // 当前组件正在操作，继续处理
+        event is PointerMoveEvent &&
+        !_isDragging &&
+        !_isSwipingLeft &&
+        !_isSwipingRight) {
+      // 检查是否正在进行拖拽排序，如果是则允许滚动
+      if (_swipeManager.isDragging) {
+        debugPrint('拖拽排序中，允许滚动事件通过');
+        // 不return，让事件继续传递以支持边缘滚动
       } else {
-        // 消费掉移动事件，防止触发滚动
+        // 只有当前组件不是操作者时才消费事件
         debugPrint('阻止滚动，消费移动事件 - 其他组件正在操作');
         return;
       }
@@ -158,6 +165,9 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       _handlePointerMove(event);
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
       _handlePointerUp(event);
+    } else if (event is PointerCancelEvent) {
+      // 处理指针取消事件，但不取消拖拽状态
+      debugPrint('指针取消事件，但保持拖拽状态');
     }
   }
 
@@ -196,7 +206,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     final delta = event.localPosition - _dragStartPosition!;
     final horizontalDistance = delta.dx.abs();
     final verticalDistance = delta.dy.abs();
-    _totalDragDistance = horizontalDistance;
+    _totalDragDistance =
+        sqrt(delta.dx * delta.dx + delta.dy * delta.dy); // 计算总的移动距离
 
     // 记录水平移动方向
     _recordHorizontalMovement(delta.dx, horizontalDistance);
@@ -224,10 +235,12 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 滑动手势处理（仅在非长按状态下）
+    // 滑动手势处理（严格限制，不能干扰拖拽）
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
+        (_longPressTimer?.isActive != true) && // 长按计时器未激活
+        verticalDistance < horizontalDistance && // 水平移动必须大于垂直移动
         _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
       debugPrint('处理滑动手势，distance=$_totalDragDistance');
       final direction =
@@ -469,7 +482,13 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   @override
   void endDrag() {
+    _isDragging = false;
+    _isLongPressing = false;
     _cancelLongPressDetection();
+    _resetGestureState();
+    _dragStartPosition = null;
+    _totalDragDistance = 0.0;
+    markNeedsPaint();
   }
 
   /// 获取滑动状态信息

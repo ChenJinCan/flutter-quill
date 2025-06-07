@@ -978,6 +978,10 @@ class QuillRawEditorState extends EditorState
         }
         debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
       },
+      onHideDragOverlay: () {
+        // 焦点聚焦时隐藏拖拽覆盖层
+        DragSortOverlay.hideOnFocus();
+      },
     );
 
     // 设置滑动回调

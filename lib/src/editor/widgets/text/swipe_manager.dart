@@ -30,6 +30,9 @@ class SwipeStateManager {
   /// ScrollController引用，用于监听滚动事件
   ScrollController? _scrollController;
 
+  /// 焦点监听器是否已添加
+  bool _focusListenerAdded = false;
+
   /// 拖拽排序相关回调
   VoidCallback? _onDragStart;
   void Function(Offset globalPosition, SwipeableComponent draggingComponent)?
@@ -46,14 +49,29 @@ class SwipeStateManager {
   void Function(Line? line, Block? block, SwipeDirection direction,
       int documentOffset, int documentLength)? _onComponentSelected;
 
+  /// 焦点聚焦时隐藏拖拽覆盖层的回调
+  VoidCallback? _onHideDragOverlay;
+
   /// 设置编辑器引用，用于在拖拽时取消focus和监听滚动
   void setEditorReferences({
     QuillController? controller,
     FocusNode? focusNode,
     ScrollController? scrollController,
   }) {
+    // 移除旧的焦点监听器
+    if (_focusListenerAdded && _focusNode != null) {
+      _focusNode!.removeListener(_onFocusChanged);
+      _focusListenerAdded = false;
+    }
+
     _controller = controller;
     _focusNode = focusNode;
+
+    // 添加新的焦点监听器
+    if (_focusNode != null) {
+      _focusNode!.addListener(_onFocusChanged);
+      _focusListenerAdded = true;
+    }
 
     // 如果有新的ScrollController，先移除旧的监听器再添加新的
     if (_scrollController != scrollController) {
@@ -61,6 +79,54 @@ class SwipeStateManager {
       _scrollController = scrollController;
       _scrollController?.addListener(_onScrollChanged);
     }
+  }
+
+  /// 焦点变化监听器 - 当焦点聚焦时立即清除所有滑动和拖拽状态
+  void _onFocusChanged() {
+    // 当编辑器获得焦点时，立即清除所有滑动和拖拽状态
+    if (_focusNode?.hasFocus == true) {
+      debugPrint('SwipeStateManager._onFocusChanged: 编辑器获得焦点，清除所有滑动和拖拽状态');
+      _clearAllStatesOnFocus();
+    }
+  }
+
+  /// 在焦点聚焦时清除所有状态的私有方法
+  void _clearAllStatesOnFocus() {
+    // 清除当前滑动状态
+    if (_currentSwipingComponent != null) {
+      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 重置滑动状态');
+      _currentSwipingComponent!.resetSwipe();
+      _currentSwipingComponent = null;
+    }
+
+    // 清除当前拖拽状态
+    if (_currentDraggingComponent != null) {
+      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 结束拖拽状态');
+      _currentDraggingComponent!.endDrag();
+      _currentDraggingComponent = null;
+    }
+
+    // 清除选中状态
+    if (_selectedComponent != null) {
+      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 清除选中状态');
+      _selectedComponent!.setSelected(false);
+      _selectedComponent = null;
+    }
+
+    // 隐藏拖拽覆盖层（如果存在）
+    // 注意：这里使用动态导入避免循环依赖
+    try {
+      // 导入drag_sort_overlay.dart并调用hideOnFocus
+      _hideDragOverlayOnFocus();
+    } catch (e) {
+      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 隐藏拖拽覆盖层失败: $e');
+    }
+  }
+
+  /// 隐藏拖拽覆盖层的私有方法（避免循环依赖）
+  void _hideDragOverlayOnFocus() {
+    // 通过回调方式通知DragSortOverlay隐藏
+    _onHideDragOverlay?.call();
   }
 
   /// 滚动事件监听器 - 在滚动时重置所有滑动状态
@@ -113,10 +179,12 @@ class SwipeStateManager {
     void Function(Offset globalPosition, SwipeableComponent draggingComponent)?
         onDragUpdate,
     void Function(SwipeableComponent draggingComponent)? onDragEnd,
+    VoidCallback? onHideDragOverlay,
   }) {
     _onDragStart = onDragStart;
     _onDragUpdate = onDragUpdate;
     _onDragEnd = onDragEnd;
+    _onHideDragOverlay = onHideDragOverlay;
   }
 
   /// 检查指定组件是否应该允许拖拽
@@ -339,6 +407,13 @@ class SwipeStateManager {
 
   /// 清理资源，移除所有监听器
   void dispose() {
+    // 移除焦点监听器
+    if (_focusListenerAdded && _focusNode != null) {
+      _focusNode!.removeListener(_onFocusChanged);
+      _focusListenerAdded = false;
+    }
+
+    // 移除滚动监听器
     _scrollController?.removeListener(_onScrollChanged);
     _scrollController = null;
     _controller = null;

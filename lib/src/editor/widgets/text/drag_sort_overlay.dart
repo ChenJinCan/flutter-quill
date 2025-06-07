@@ -37,17 +37,23 @@ class DragSortOverlay {
   static ScrollController? _scrollController;
   static BuildContext? _context;
 
-  // 边缘滚动相关
+  // 边缘滚动相关 - 智能方向检测版本
   static Timer? _scrollTimer;
-  static bool _isScrolling = false;
-  static const double _edgeZone = 150; // 边缘检测区域
-  static const double _scrollSpeed = 200; // 滚动速度（像素/秒）
+  static bool _isAutoScrolling = false; // 是否正在自动滚动
+  static const double _edgeZone = 60; // 边缘检测区域 - 减小到60px
+  static const double _baseScrollSpeed = 800; // 基础滚动速度（像素/秒）
+  static const double _maxScrollSpeed = 3000; // 最大滚动速度（像素/秒）
+  static double _currentScrollVelocity = 0; // 当前滚动速度
+  static int _lastScrollDirection = 0; // 上次滚动方向（-1向上，1向下，0无）
 
   // 当前拖拽位置
   static Offset? _currentPosition;
 
   // 拖拽插入位置（文档偏移量）
   static int? _insertionOffset;
+
+  // 编辑器Key，用于获取正确的RenderBox
+  static GlobalKey? _editorKey;
 
   /// 显示拖拽覆盖层
   static void show({
@@ -67,6 +73,7 @@ class DragSortOverlay {
     }
 
     hide(); // 确保之前的覆盖层被移除
+    _resetScrollState(); // 重置滚动状态
 
     _draggingComponent = component;
     _controller = controller;
@@ -74,6 +81,7 @@ class DragSortOverlay {
     _currentPosition = initialGlobalPosition;
     _context = context;
     _insertionOffset = null;
+    _editorKey = editorKey;
 
     _overlayEntry = OverlayEntry(
       builder: (context) => _DragOverlayWidget(
@@ -93,7 +101,7 @@ class DragSortOverlay {
 
   /// 隐藏拖拽覆盖层
   static void hide() {
-    _stopEdgeScroll();
+    _stopAutoScroll();
     _overlayEntry?.remove();
     _overlayEntry = null;
     _draggingComponent = null;
@@ -102,13 +110,137 @@ class DragSortOverlay {
     _currentPosition = null;
     _context = null;
     _insertionOffset = null;
+    _editorKey = null;
   }
 
-  /// 更新拖拽位置
+  /// 在焦点聚焦时隐藏覆盖层（由SwipeStateManager调用）
+  static void hideOnFocus() {
+    if (isVisible) {
+      debugPrint('DragSortOverlay.hideOnFocus: 编辑器获得焦点，隐藏拖拽覆盖层');
+      hide();
+    }
+  }
+
+  /// 更新拖拽位置 - 重新设计的核心逻辑
   static void updatePosition(Offset globalPosition) {
     _currentPosition = globalPosition;
-    _checkEdgeScroll(globalPosition);
+    _handleEdgeScrolling(globalPosition);
     _overlayEntry?.markNeedsBuild();
+    debugPrint(
+        'DragSortOverlay.updatePosition: 覆盖层位置更新 $globalPosition, 覆盖层可见: ${_overlayEntry != null}');
+  }
+
+  /// 处理边缘滚动 - 屏幕边缘触发，编辑器边界限制
+  static void _handleEdgeScrolling(Offset position) {
+    if (_scrollController == null ||
+        !_scrollController!.hasClients ||
+        _context == null) {
+      return;
+    }
+
+    // 1. 根据屏幕边缘判断是否触发滚动操作
+    final mediaQuery = MediaQuery.of(_context!);
+    final screenHeight = mediaQuery.size.height;
+    final safeAreaTop = mediaQuery.padding.top;
+    final appBarHeight = _getAppBarHeight();
+
+    final effectiveTop = safeAreaTop + appBarHeight;
+    final effectiveBottom = screenHeight;
+
+    final distanceFromScreenTop = position.dy - effectiveTop;
+    final distanceFromScreenBottom = effectiveBottom - position.dy;
+
+    // 检查是否在屏幕边缘区域
+    bool inScreenTopEdge =
+        distanceFromScreenTop >= 0 && distanceFromScreenTop < _edgeZone;
+    bool inScreenBottomEdge =
+        distanceFromScreenBottom >= 0 && distanceFromScreenBottom < _edgeZone;
+
+    // 2. 根据QuillEditor边界判断是否还能继续滚动
+    bool canScrollUp = false;
+    bool canScrollDown = false;
+
+    if (_editorKey != null) {
+      try {
+        // 通过editorKey获取QuillEditor的RenderBox
+        final renderObject = _editorKey!.currentContext?.findRenderObject();
+        if (renderObject is RenderBox) {
+          final editorRenderBox = renderObject;
+          final editorGlobalPosition =
+              editorRenderBox.localToGlobal(Offset.zero);
+          final editorSize = editorRenderBox.size;
+
+          final editorTop = editorGlobalPosition.dy;
+          final editorBottom = editorGlobalPosition.dy + editorSize.height;
+
+          // 检查编辑器内容是否还能滚动
+          final currentOffset = _scrollController!.offset;
+          final maxOffset = _scrollController!.position.maxScrollExtent;
+
+          canScrollUp = currentOffset > 0;
+          canScrollDown = currentOffset < maxOffset;
+
+          debugPrint(
+              '编辑器边界: 顶部=$editorTop, 底部=$editorBottom, 高度=${editorSize.height}');
+          debugPrint('滚动状态: 当前位置=$currentOffset, 最大位置=$maxOffset');
+          debugPrint('滚动能力: 可向上=$canScrollUp, 可向下=$canScrollDown');
+        }
+      } catch (e) {
+        debugPrint('获取编辑器边界失败: $e');
+        // 如果无法获取编辑器边界，回退到基本的滚动检查
+        final currentOffset = _scrollController!.offset;
+        final maxOffset = _scrollController!.position.maxScrollExtent;
+        canScrollUp = currentOffset > 0;
+        canScrollDown = currentOffset < maxOffset;
+      }
+    }
+
+    debugPrint(
+        '屏幕边缘检测: 顶部距离=$distanceFromScreenTop, 底部距离=$distanceFromScreenBottom, 边缘区域=$_edgeZone');
+    debugPrint('屏幕边缘状态: 顶部边缘=$inScreenTopEdge, 底部边缘=$inScreenBottomEdge');
+
+    // 3. 只根据屏幕边缘触发滚动，编辑器边界检查在_startAutoScroll中处理
+    int desiredDirection = 0;
+    bool shouldScroll = false;
+
+    if (inScreenTopEdge) {
+      // 在屏幕顶部边缘，尝试向上滚动
+      desiredDirection = -1;
+      shouldScroll = true;
+      debugPrint('触发向上滚动: 屏幕顶部边缘，可向上滚动=$canScrollUp');
+    } else if (inScreenBottomEdge) {
+      // 在屏幕底部边缘，尝试向下滚动
+      desiredDirection = 1;
+      shouldScroll = true;
+      debugPrint('触发向下滚动: 屏幕底部边缘，可向下滚动=$canScrollDown');
+    } else {
+      debugPrint('不触发滚动: 屏幕顶部边缘=$inScreenTopEdge, 屏幕底部边缘=$inScreenBottomEdge');
+    }
+
+    if (shouldScroll) {
+      // 在margin边界内，启动或更新滚动
+      final speedRatio = desiredDirection == -1
+          ? 1.0 - (distanceFromScreenTop / _edgeZone)
+          : 1.0 - (distanceFromScreenBottom / _edgeZone);
+
+      _currentScrollVelocity = desiredDirection *
+          (_baseScrollSpeed +
+              (_maxScrollSpeed - _baseScrollSpeed) * speedRatio);
+      _lastScrollDirection = desiredDirection;
+      _startAutoScroll();
+      debugPrint(
+          '在margin边界内，边缘滚动: 方向=$desiredDirection, 速度=$_currentScrollVelocity');
+    } else {
+      // 不在margin边界内
+      if (_isAutoScrolling) {
+        // 如果正在滚动，继续滚动但不更新速度
+        debugPrint('不在margin边界内但正在滚动，继续滚动直到到达编辑器边界');
+        // 不调用_stopAutoScroll()，让滚动继续进行
+        // 滚动会在_startAutoScroll中的边界检查时自然停止
+      } else {
+        debugPrint('不在margin边界内且未在滚动，不启动滚动');
+      }
+    }
   }
 
   /// 完成拖拽排序操作
@@ -228,101 +360,100 @@ class DragSortOverlay {
     return 56; // 默认AppBar高度
   }
 
-  /// 检查边缘滚动
-  static void _checkEdgeScroll(Offset position) {
-    if (_scrollController == null ||
-        !_scrollController!.hasClients ||
-        _context == null) {
-      return;
-    }
+  /// 开始自动滚动 - 修复跳转问题的稳定版本
+  static void _startAutoScroll() {
+    if (_isAutoScrolling) return; // 避免重复启动
 
-    final mediaQuery = MediaQuery.of(_context!);
-    final screenHeight = mediaQuery.size.height;
-    final safeAreaTop = mediaQuery.padding.top;
-    final safeAreaBottom = mediaQuery.padding.bottom;
-    final appBarHeight = _getAppBarHeight();
-
-    // 计算实际可用区域
-    final effectiveTop = safeAreaTop + appBarHeight;
-    final effectiveBottom = screenHeight;
-
-    bool shouldScrollUp = position.dy < effectiveTop + _edgeZone;
-    bool shouldScrollDown = position.dy > effectiveBottom - _edgeZone;
-
-    if (shouldScrollUp || shouldScrollDown) {
-      _startEdgeScroll(shouldScrollUp ? -1 : 1);
-    } else {
-      _stopEdgeScroll();
-    }
-  }
-
-  /// 开始边缘滚动
-  static void _startEdgeScroll(int direction) {
-    if (_isScrolling) return;
-
-    _isScrolling = true;
-    _scrollTimer = Timer.periodic(const Duration(milliseconds: 8), (timer) {
+    _isAutoScrolling = true;
+    // 降低帧率到60fps，避免过于频繁的更新导致跳转
+    _scrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (_scrollController == null || !_scrollController!.hasClients) {
-        _stopEdgeScroll();
+        _stopAutoScroll();
         return;
       }
 
-      // 重新检查当前位置是否还在边缘 - 这是唯一的停止条件
-      if (_currentPosition != null && _context != null) {
-        final mediaQuery = MediaQuery.of(_context!);
-        final screenHeight = mediaQuery.size.height;
-        final safeAreaTop = mediaQuery.padding.top;
-        final safeAreaBottom = mediaQuery.padding.bottom;
-        final appBarHeight = _getAppBarHeight();
-
-        final effectiveTop = safeAreaTop + appBarHeight;
-        final effectiveBottom = screenHeight - safeAreaBottom;
-
-        bool stillInEdge = _currentPosition!.dy < effectiveTop + _edgeZone ||
-            _currentPosition!.dy > effectiveBottom - _edgeZone;
-
-        if (!stillInEdge) {
-          _stopEdgeScroll();
-          return;
-        }
-      }
-
-      // 持续滚动，不管是否到达边界
       final currentOffset = _scrollController!.offset;
       final maxOffset = _scrollController!.position.maxScrollExtent;
-      final scrollDelta = _scrollSpeed * 0.032 * direction; // 125fps
 
-      double targetOffset = currentOffset + scrollDelta;
-
-      // 确定实际的滚动目标位置
-      double newOffset;
-      if (direction < 0) {
-        // 向上滚动：目标是0
-        newOffset = targetOffset < 0 ? 0 : targetOffset;
-      } else {
-        // 向下滚动：目标是maxOffset
-        newOffset = targetOffset > maxOffset ? maxOffset : targetOffset;
-      }
-
-      // 总是尝试滚动，即使已经在边界
-      try {
-        _scrollController!.jumpTo(newOffset);
-      } catch (e) {
-        // 滚动失败才停止
-        _stopEdgeScroll();
+      // 检查是否已经到达编辑器边界
+      if ((_currentScrollVelocity < 0 && currentOffset <= 0) ||
+          (_currentScrollVelocity > 0 && currentOffset >= maxOffset)) {
+        debugPrint(
+            '到达编辑器边界，停止滚动: 当前位置=$currentOffset, 最大位置=$maxOffset, 滚动方向=${_currentScrollVelocity < 0 ? "向上" : "向下"}');
+        _stopAutoScroll();
         return;
       }
 
-      // 注意：不再检查 newOffset != currentOffset
-      // 因为即使到达边界，只要拖拽还在边缘区域，就应该保持滚动状态
+      // 计算新的滚动位置 - 使用稳定的时间步长
+      final deltaTime = 0.016; // 16ms
+      final scrollDelta = _currentScrollVelocity * deltaTime;
+
+      // 限制单次滚动距离，避免大幅跳跃
+      final maxSingleScroll = 20.0; // 单次最大滚动距离
+      final clampedDelta = scrollDelta.clamp(-maxSingleScroll, maxSingleScroll);
+
+      double newOffset = currentOffset + clampedDelta;
+
+      // 严格的边界限制
+      if (newOffset < 0) {
+        newOffset = 0;
+      } else if (newOffset > maxOffset) {
+        newOffset = maxOffset;
+      }
+
+      // 使用安全的滚动方法
+      if (!_safeScrollTo(newOffset)) {
+        // 如果滚动失败，停止自动滚动
+        debugPrint('滚动失败，停止自动滚动: 目标位置=$newOffset, 当前位置=$currentOffset');
+        _stopAutoScroll();
+      }
     });
   }
 
-  /// 停止边缘滚动
-  static void _stopEdgeScroll() {
-    _isScrolling = false;
+  /// 停止自动滚动
+  static void _stopAutoScroll() {
+    _isAutoScrolling = false;
+    _currentScrollVelocity = 0;
+    _lastScrollDirection = 0;
     _scrollTimer?.cancel();
     _scrollTimer = null;
+  }
+
+  /// 重置滚动状态
+  static void _resetScrollState() {
+    _stopAutoScroll();
+    _currentScrollVelocity = 0;
+    _lastScrollDirection = 0;
+  }
+
+  /// 安全的滚动位置更新
+  static bool _safeScrollTo(double targetOffset) {
+    if (_scrollController == null || !_scrollController!.hasClients) {
+      debugPrint('_safeScrollTo失败: ScrollController为null或无客户端');
+      return false;
+    }
+
+    try {
+      final currentOffset = _scrollController!.offset;
+      final maxOffset = _scrollController!.position.maxScrollExtent;
+
+      // 限制目标位置在有效范围内
+      double clampedOffset = targetOffset.clamp(0.0, maxOffset);
+
+      // 检查是否有意义的移动（避免微小的抖动）
+      if ((clampedOffset - currentOffset).abs() < 0.1) {
+        debugPrint(
+            '_safeScrollTo: 移动距离太小，跳过滚动 (${(clampedOffset - currentOffset).abs()})');
+        return true;
+      }
+
+      _scrollController!.jumpTo(clampedOffset);
+      debugPrint('_safeScrollTo成功: 从$currentOffset滚动到$clampedOffset');
+      return true;
+    } catch (e) {
+      debugPrint('_safeScrollTo异常: $e');
+      return false;
+    }
   }
 }
 
@@ -351,8 +482,6 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
   // 缓存LineInfo，避免重复计算
   List<_LineInfo>? _cachedLineInfos;
-  Size? _lastEditorSize;
-  int? _lastDocumentHash;
   double? _lastScrollOffset;
 
   @override
@@ -368,62 +497,33 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
     super.dispose();
   }
 
-  /// 滚动位置改变时清除缓存
+  /// 滚动位置改变时立即更新 - 强制同步
   void _onScrollChanged() {
     final currentScrollOffset = widget.scrollController?.offset;
     if (currentScrollOffset != _lastScrollOffset) {
+      // 强制清除所有缓存
       _cachedLineInfos = null;
       _lastScrollOffset = currentScrollOffset;
 
-      // 如果正在显示指示器，立即更新
-      if (_insertIndicatorPosition != null &&
-          DragSortOverlay._currentPosition != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _updateInsertIndicator(DragSortOverlay._currentPosition!);
-          }
+      // 强制立即重建UI，确保位置指示器同步
+      if (DragSortOverlay._currentPosition != null && mounted) {
+        setState(() {
+          // 强制重建，确保位置计算基于最新的滚动位置
         });
       }
     }
   }
 
-  /// 获取文档哈希值，用于检测文档变化
-  int _getDocumentHash() {
-    final doc = widget.controller.document;
-    return doc.length.hashCode ^ doc.root.children.length.hashCode;
-  }
-
-  /// 检查是否需要重新计算LineInfo
-  bool _shouldRecalculateLineInfos(RenderBox editorRenderBox) {
-    final currentEditorSize = editorRenderBox.size;
-    final currentDocumentHash = _getDocumentHash();
-    final currentScrollOffset = widget.scrollController?.offset;
-
-    if (_cachedLineInfos == null) return true;
-    if (_lastEditorSize != currentEditorSize) return true;
-    if (_lastDocumentHash != currentDocumentHash) return true;
-    if (_lastScrollOffset != currentScrollOffset) return true;
-
-    return false;
-  }
-
-  /// 获取或计算LineInfo
+  /// 获取LineInfo - 实时计算，不依赖缓存
   List<_LineInfo> _getLineInfos(RenderBox editorRenderBox) {
-    if (_shouldRecalculateLineInfos(editorRenderBox)) {
-      final lineInfos = <_LineInfo>[];
-      _collectTextLineInfos(editorRenderBox, Offset.zero, lineInfos);
+    // 每次都重新计算，确保位置准确
+    final lineInfos = <_LineInfo>[];
+    _collectTextLineInfos(editorRenderBox, Offset.zero, lineInfos);
 
-      // 按Y位置排序
-      lineInfos.sort((a, b) => a.top.compareTo(b.top));
+    // 按Y位置排序
+    lineInfos.sort((a, b) => a.top.compareTo(b.top));
 
-      // 缓存结果
-      _cachedLineInfos = lineInfos;
-      _lastEditorSize = editorRenderBox.size;
-      _lastDocumentHash = _getDocumentHash();
-      _lastScrollOffset = widget.scrollController?.offset;
-    }
-
-    return _cachedLineInfos!;
+    return lineInfos;
   }
 
   /// 递归收集TextLine位置信息
@@ -462,7 +562,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
     final currentPos =
         DragSortOverlay._currentPosition ?? widget.initialPosition;
 
-    // 计算插入指示器位置
+    // 立即同步更新插入指示器位置
     _updateInsertIndicator(currentPos);
 
     return Stack(
@@ -480,7 +580,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
                 borderRadius: BorderRadius.circular(1),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.blue.withOpacity(0.3),
+                    color: Colors.blue.withValues(alpha: 0.3),
                     blurRadius: 4,
                     spreadRadius: 1,
                   ),
@@ -498,12 +598,12 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
               constraints: const BoxConstraints(maxWidth: 300),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -524,11 +624,10 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
     );
   }
 
-  /// 更新插入指示器位置 - 使用精确的LineInfo计算
+  /// 更新插入指示器位置 - 实时精确跟随
   void _updateInsertIndicator(Offset globalPosition) {
     final renderObject = widget.editorKey.currentContext?.findRenderObject();
     if (renderObject is! RenderBox) {
-      debugPrint('_updateInsertIndicator: renderObject 不是 RenderBox');
       return;
     }
 
@@ -537,71 +636,77 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
       final editorLocalPosition = renderObject.globalToLocal(globalPosition);
       final editorSize = renderObject.size;
 
-      debugPrint('_updateInsertIndicator: globalPosition=$globalPosition');
-      debugPrint(
-          '_updateInsertIndicator: editorLocalPosition=$editorLocalPosition');
-      debugPrint('_updateInsertIndicator: editorSize=$editorSize');
+      // 强制刷新LineInfo，确保获取最新位置
+      _cachedLineInfos = null;
+      final lineInfos = _getLineInfos(renderObject);
 
-      // 确保拖拽位置在编辑器范围内
-      if (editorLocalPosition.dy < 0 ||
-          editorLocalPosition.dy > editorSize.height) {
-        debugPrint('_updateInsertIndicator: 拖拽位置超出编辑器范围');
-        setState(() {
-          _insertIndicatorPosition = null;
-        });
-        DragSortOverlay._insertionOffset = null;
-        return;
+      // 智能边缘处理和精确跟随
+      _InsertionResult? result;
+
+      if (editorLocalPosition.dy < -50) {
+        // 拖拽到编辑器上方较远位置，插入到顶部
+        result = _InsertionResult(globalPosition.dy, 0);
+      } else if (editorLocalPosition.dy > editorSize.height + 50) {
+        // 拖拽到编辑器下方较远位置，插入到底部
+        final documentLength = widget.controller.document.length;
+        result = _InsertionResult(globalPosition.dy, documentLength);
+      } else {
+        // 在编辑器附近，精确计算插入位置
+        result = _findBestInsertionPosition(lineInfos, editorLocalPosition.dy,
+            editorGlobalPosition, globalPosition);
       }
 
-      // 获取精确的LineInfo
-      final lineInfos = _getLineInfos(renderObject);
-      debugPrint('_updateInsertIndicator: 找到 ${lineInfos.length} 行');
-
-      final result = _findBestInsertionPosition(
-          lineInfos, editorLocalPosition.dy, editorGlobalPosition);
-
+      // 更新位置并触发重建
       if (result != null) {
+        if (mounted) {
+          setState(() {
+            _insertIndicatorPosition = Offset(0, result!.insertionY);
+          });
+        }
+        DragSortOverlay._insertionOffset = result!.documentOffset;
         debugPrint(
-            '_updateInsertIndicator: 设置插入位置 offset=${result.documentOffset}, y=${result.insertionY}');
-        setState(() {
-          _insertIndicatorPosition = Offset(0, result.insertionY);
-        });
-        DragSortOverlay._insertionOffset = result.documentOffset;
+            '位置指示器更新: ${result!.insertionY}, 文档偏移: ${result!.documentOffset}');
       } else {
-        debugPrint('_updateInsertIndicator: 未找到插入位置');
-        setState(() {
-          _insertIndicatorPosition = null;
-        });
+        if (mounted) {
+          setState(() {
+            _insertIndicatorPosition = null;
+          });
+        }
         DragSortOverlay._insertionOffset = null;
       }
     } catch (e) {
-      debugPrint('_updateInsertIndicator: 发生异常: $e');
-      setState(() {
-        _insertIndicatorPosition = null;
-      });
+      if (mounted) {
+        setState(() {
+          _insertIndicatorPosition = null;
+        });
+      }
       DragSortOverlay._insertionOffset = null;
+      debugPrint('位置指示器更新失败: $e');
     }
   }
 
-  /// 找到最佳插入位置 - 精确计算TextLine间隙
-  _InsertionResult? _findBestInsertionPosition(
-      List<_LineInfo> lineInfos, double dragY, Offset editorGlobalPosition) {
-    if (lineInfos.isEmpty) return null;
+  /// 找到最佳插入位置 - 精确同步跟随
+  _InsertionResult? _findBestInsertionPosition(List<_LineInfo> lineInfos,
+      double dragY, Offset editorGlobalPosition, Offset globalDragPosition) {
+    if (lineInfos.isEmpty) {
+      // 没有行时，指示器跟随拖拽位置
+      return _InsertionResult(globalDragPosition.dy, 0);
+    }
 
-    const insertionMargin = 20.0;
+    const insertionMargin = 15.0;
 
     // 在第一行之前
     if (dragY < lineInfos.first.top + insertionMargin) {
-      final insertionY = editorGlobalPosition.dy + lineInfos.first.top - 8;
+      final insertionY = editorGlobalPosition.dy + lineInfos.first.top - 5;
       final documentOffset = _getDocumentOffsetForLineIndex(0);
       return _InsertionResult(insertionY, documentOffset);
     }
 
-    // 在最后一行之后
+    // 在最后一行之后 - 指示器精确跟随全局拖拽位置
     if (dragY > lineInfos.last.bottom - insertionMargin) {
-      final insertionY = editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+      // 直接使用全局拖拽位置，确保完全同步
       final documentOffset = _getDocumentOffsetForLineIndex(lineInfos.length);
-      return _InsertionResult(insertionY, documentOffset);
+      return _InsertionResult(globalDragPosition.dy, documentOffset);
     }
 
     // 在TextLine之间找最合适的位置
@@ -613,7 +718,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
       final gapBottom = nextLine.top;
       final gapCenter = (gapTop + gapBottom) / 2;
 
-      // 拖拽位置在间隙中
+      // 拖拽位置在间隙中 - 使用间隙中心位置
       if (dragY >= gapTop && dragY <= gapBottom) {
         final insertionY = editorGlobalPosition.dy + gapCenter;
         final documentOffset = _getDocumentOffsetForLineIndex(i + 1);
@@ -640,10 +745,9 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
       }
     }
 
-    // 默认插入到末尾
-    final insertionY = editorGlobalPosition.dy + lineInfos.last.bottom + 8;
+    // 默认插入到末尾 - 指示器跟随全局拖拽位置
     final documentOffset = _getDocumentOffsetForLineIndex(lineInfos.length);
-    return _InsertionResult(insertionY, documentOffset);
+    return _InsertionResult(globalDragPosition.dy, documentOffset);
   }
 
   /// 根据行索引获取文档偏移量
