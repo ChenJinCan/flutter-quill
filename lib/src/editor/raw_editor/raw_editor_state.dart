@@ -575,7 +575,7 @@ class QuillRawEditorState extends EditorState
   void _handleTextLineSwipeLeft(Line node) {
     // TODO: 在这里实现左滑逻辑
     // 例如可以显示快捷操作菜单、标记完成等
-    debugPrint('Left swipe on line: ${node.toPlainText()}');
+    // debugPrint('Left swipe on line: ${node.toPlainText()}');
 
     // 示例：左滑可以添加删除线格式
     if (!widget.config.readOnly) {}
@@ -590,7 +590,7 @@ class QuillRawEditorState extends EditorState
   void _handleTextLineSwipeRight(Line node) {
     // TODO: 在这里实现右滑逻辑
     // 例如可以增加缩进、创建子项等
-    debugPrint('Right swipe on line: ${node.toPlainText()}');
+    // debugPrint('Right swipe on line: ${node.toPlainText()}');
 
     // 示例：右滑可以增加缩进
     if (!widget.config.readOnly) {}
@@ -605,7 +605,7 @@ class QuillRawEditorState extends EditorState
   void _handleTextBlockSwipeLeft(Block node) {
     // TODO: 在这里实现左滑逻辑
     // 例如可以显示快捷操作菜单、标记完成等
-    debugPrint('Left swipe on block: ${node.toPlainText()}');
+    // debugPrint('Left swipe on block: ${node.toPlainText()}');
 
     // 示例：左滑可以删除整个块
     if (!widget.config.readOnly) {
@@ -622,7 +622,7 @@ class QuillRawEditorState extends EditorState
   void _handleTextBlockSwipeRight(Block node) {
     // TODO: 在这里实现右滑逻辑
     // 例如可以增加缩进、创建子块等
-    debugPrint('Right swipe on block: ${node.toPlainText()}');
+    // debugPrint('Right swipe on block: ${node.toPlainText()}');
 
     // 示例：右滑可以增加缩进
     if (!widget.config.readOnly) {
@@ -939,50 +939,47 @@ class QuillRawEditorState extends EditorState
 
   /// 设置拖拽排序回调
   void _setupDragSortCallbacks() {
-    final swipeManager = SwipeStateManager();
+    final swipeManager = SwipeStateManager()
 
-    // 设置拖拽回调
-    swipeManager.setDragCallbacks(
-      onDragStart: () {
-        // 拖拽开始时的处理
-        debugPrint('拖拽排序开始');
-        // 确保隐藏之前的覆盖层
-        DragSortOverlay.hide();
-      },
-      onDragUpdate: (globalPosition, draggingComponent) {
-        // 显示或更新拖拽覆盖层
-        if (!DragSortOverlay.isVisible && mounted && context.mounted) {
-          DragSortOverlay.show(
-            context: context,
-            component: draggingComponent,
-            controller: controller,
-            editorKey: _editorKey,
-            initialGlobalPosition: globalPosition,
-            scrollController: _scrollController,
-          );
-        }
-
-        // 总是更新覆盖层位置
-        DragSortOverlay.updatePosition(globalPosition);
-
-        debugPrint('拖拽更新: ${globalPosition.dx}, ${globalPosition.dy}');
-      },
-      onDragEnd: (draggingComponent) {
-        // 完成拖拽排序的文档重排序操作
-        try {
-          DragSortOverlay.completeDragSort();
-        } catch (e) {
-          debugPrint('拖拽排序文档操作失败: $e');
-          // 即使排序失败也要隐藏覆盖层
+      // 设置拖拽回调
+      ..setDragCallbacks(
+        onDragStart: () {
+          // 拖拽开始时的处理
+          // debugPrint('拖拽排序开始');
+          // 确保隐藏之前的覆盖层
           DragSortOverlay.hide();
-        }
-        debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
-      },
-      onHideDragOverlay: () {
-        // 焦点聚焦时隐藏拖拽覆盖层
-        DragSortOverlay.hideOnFocus();
-      },
-    );
+        },
+        onDragUpdate: (globalPosition, draggingComponent) {
+          // 显示或更新拖拽覆盖层
+          if (!DragSortOverlay.isVisible && mounted && context.mounted) {
+            DragSortOverlay.show(
+              context: context,
+              component: draggingComponent,
+              controller: controller,
+              editorKey: _editorKey,
+              initialGlobalPosition: globalPosition,
+              scrollController: _scrollController,
+            );
+          }
+
+          // 总是更新覆盖层位置
+          DragSortOverlay.updatePosition(globalPosition);
+
+          // debugPrint('拖拽更新: ${globalPosition.dx}, ${globalPosition.dy}');
+        },
+        onDragEnd: (draggingComponent) {
+          // 完成拖拽排序的文档重排序操作
+          try {
+            DragSortOverlay.completeDragSort();
+          } catch (e) {
+            // debugPrint('拖拽排序文档操作失败: $e');
+            // 即使排序失败也要隐藏覆盖层
+            DragSortOverlay.hide();
+          }
+          // debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
+        },
+        onHideDragOverlay: DragSortOverlay.hideOnFocus,
+      );
 
     // 设置滑动回调
     swipeManager.setSwipeCallbacks(

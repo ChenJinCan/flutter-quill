@@ -46,7 +46,7 @@ class DragSortOverlay {
   // 边缘滚动相关
   static Timer? _scrollTimer;
   static bool _isAutoScrolling = false;
-  static const double _edgeZone = 60;
+  static const double _edgeZone = 100;
   static const double _baseScrollSpeed = 800;
   static const double _maxScrollSpeed = 3000;
   static double _currentScrollVelocity = 0;
@@ -138,36 +138,38 @@ class DragSortOverlay {
 
     final mediaQuery = MediaQuery.of(_context!);
     final effectiveTop = mediaQuery.padding.top + _getAppBarHeight();
-    final effectiveBottom = mediaQuery.size.height;
+    final effectiveBottom = mediaQuery.size.height - mediaQuery.padding.bottom;
 
     final distanceFromScreenTop = position.dy - effectiveTop;
     final distanceFromScreenBottom = effectiveBottom - position.dy;
 
-    final inScreenTopEdge =
-        distanceFromScreenTop >= 0 && distanceFromScreenTop < _edgeZone;
-    final inScreenBottomEdge =
-        distanceFromScreenBottom >= 0 && distanceFromScreenBottom < _edgeZone;
+    // 边缘检测逻辑：
+    // - 顶部及以上都应该触发向上滚动（distanceFromScreenTop <= _edgeZone）
+    // - 底部及以下都应该触发向下滚动（distanceFromScreenBottom <= _edgeZone）
+    final inTopScrollZone = distanceFromScreenTop <= _edgeZone;
+    final inBottomScrollZone = distanceFromScreenBottom <= _edgeZone;
 
     final (canScrollUp, canScrollDown) = _getScrollCapabilities();
 
     int desiredDirection = 0;
     double distance = 0;
 
-    // 优先级判断：如果同时在两个边缘区域，选择距离更近的一个
-    if (inScreenTopEdge && inScreenBottomEdge) {
+    // 确定滚动方向和距离
+    if (inTopScrollZone && inBottomScrollZone) {
+      // 同时在两个区域，选择距离更近的一个
       if (distanceFromScreenTop <= distanceFromScreenBottom && canScrollUp) {
         desiredDirection = -1;
-        distance = distanceFromScreenTop;
+        distance = distanceFromScreenTop.clamp(0.0, double.infinity);
       } else if (canScrollDown) {
         desiredDirection = 1;
-        distance = distanceFromScreenBottom;
+        distance = distanceFromScreenBottom.clamp(0.0, double.infinity);
       }
-    } else if (inScreenTopEdge && canScrollUp) {
+    } else if (inTopScrollZone && canScrollUp) {
       desiredDirection = -1;
-      distance = distanceFromScreenTop;
-    } else if (inScreenBottomEdge && canScrollDown) {
+      distance = distanceFromScreenTop.clamp(0.0, double.infinity);
+    } else if (inBottomScrollZone && canScrollDown) {
       desiredDirection = 1;
-      distance = distanceFromScreenBottom;
+      distance = distanceFromScreenBottom.clamp(0.0, double.infinity);
     }
 
     if (desiredDirection != 0) {

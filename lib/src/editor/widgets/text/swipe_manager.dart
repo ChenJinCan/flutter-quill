@@ -85,7 +85,7 @@ class SwipeStateManager {
   void _onFocusChanged() {
     // 当编辑器获得焦点时，立即清除所有滑动和拖拽状态
     if (_focusNode?.hasFocus == true) {
-      debugPrint('SwipeStateManager._onFocusChanged: 编辑器获得焦点，清除所有滑动和拖拽状态');
+      // debugPrint('SwipeStateManager._onFocusChanged: 编辑器获得焦点，清除所有滑动和拖拽状态');
       _clearAllStatesOnFocus();
     }
   }
@@ -94,21 +94,21 @@ class SwipeStateManager {
   void _clearAllStatesOnFocus() {
     // 清除当前滑动状态
     if (_currentSwipingComponent != null) {
-      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 重置滑动状态');
+      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 重置滑动状态');
       _currentSwipingComponent!.resetSwipe();
       _currentSwipingComponent = null;
     }
 
     // 清除当前拖拽状态
     if (_currentDraggingComponent != null) {
-      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 结束拖拽状态');
+      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 结束拖拽状态');
       _currentDraggingComponent!.endDrag();
       _currentDraggingComponent = null;
     }
 
     // 清除选中状态
     if (_selectedComponent != null) {
-      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 清除选中状态');
+      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 清除选中状态');
       _selectedComponent!.setSelected(false);
       _selectedComponent = null;
     }
@@ -119,7 +119,7 @@ class SwipeStateManager {
       // 导入drag_sort_overlay.dart并调用hideOnFocus
       _hideDragOverlayOnFocus();
     } catch (e) {
-      debugPrint('SwipeStateManager._clearAllStatesOnFocus: 隐藏拖拽覆盖层失败: $e');
+      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 隐藏拖拽覆盖层失败: $e');
     }
   }
 
@@ -133,7 +133,7 @@ class SwipeStateManager {
   void _onScrollChanged() {
     // 如果有组件在滑动状态，重置它们
     if (_currentSwipingComponent != null) {
-      debugPrint('检测到滚动，重置滑动状态');
+      // debugPrint('检测到滚动，重置滑动状态');
       _currentSwipingComponent!.resetSwipe();
       _currentSwipingComponent = null;
     }
@@ -212,7 +212,7 @@ class SwipeStateManager {
 
     // 如果光标在当前TextLine范围内，禁止拖拽
     if (cursorOffset >= lineStartOffset && cursorOffset < lineEndOffset) {
-      debugPrint('SwipeStateManager.shouldAllowDrag: 光标在当前TextLine，禁止拖拽');
+      // debugPrint('SwipeStateManager.shouldAllowDrag: 光标在当前TextLine，禁止拖拽');
       return false;
     }
 
@@ -223,7 +223,7 @@ class SwipeStateManager {
   bool startDrag(SwipeableComponent component) {
     // 检查是否应该允许拖拽
     if (!shouldAllowDrag(component)) {
-      debugPrint('SwipeStateManager.startDrag: 当前组件不允许拖拽');
+      // debugPrint('SwipeStateManager.startDrag: 当前组件不允许拖拽');
       return false;
     }
 
@@ -248,12 +248,12 @@ class SwipeStateManager {
 
     // 开始拖拽时取消编辑器焦点
     if (_focusNode?.hasFocus == true) {
-      debugPrint('SwipeStateManager.startDrag: 取消编辑器焦点');
+      // debugPrint('SwipeStateManager.startDrag: 取消编辑器焦点');
       _focusNode!.unfocus();
     }
 
     _currentDraggingComponent = component;
-    debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
+    // debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
     _onDragStart?.call();
     return true;
   }
@@ -261,17 +261,12 @@ class SwipeStateManager {
   /// 更新拖拽位置
   void updateDrag(Offset globalPosition) {
     if (_currentDraggingComponent != null) {
-      debugPrint(
-          'SwipeStateManager.updateDrag: 更新拖拽位置 $globalPosition, component=${_currentDraggingComponent!.componentId}');
-      debugPrint(
-          'SwipeStateManager.updateDrag: _onDragUpdate 回调是否为null: ${_onDragUpdate == null}');
-
       // 调用覆盖层更新位置
       // 需要导入 drag_sort_overlay.dart
 
       _onDragUpdate?.call(globalPosition, _currentDraggingComponent!);
     } else {
-      debugPrint('SwipeStateManager.updateDrag: 没有正在拖拽的组件');
+      // debugPrint('SwipeStateManager.updateDrag: 没有正在拖拽的组件');
     }
   }
 
@@ -288,7 +283,7 @@ class SwipeStateManager {
         // 通过回调方式处理拖拽完成
         _onDragEnd?.call(component);
       } catch (e) {
-        debugPrint('SwipeStateManager.endDrag: 拖拽完成处理失败: $e');
+        // debugPrint('SwipeStateManager.endDrag: 拖拽完成处理失败: $e');
       }
     }
   }
@@ -302,20 +297,20 @@ class SwipeStateManager {
       SwipeableComponent component, SwipeDirection direction, double offset) {
     // 如果有组件正在拖拽，不允许开始滑动
     if (_currentDraggingComponent != null) {
-      debugPrint('SwipeStateManager.startSwipe: 有组件正在拖拽，拒绝滑动');
+      // debugPrint('SwipeStateManager.startSwipe: 有组件正在拖拽，拒绝滑动');
       return false;
     }
 
     // 当有焦点时，全局禁止左右滑动操作
     if (_focusNode?.hasFocus == true) {
-      debugPrint('SwipeStateManager.startSwipe: 编辑器有焦点，禁止滑动操作');
+      // debugPrint('SwipeStateManager.startSwipe: 编辑器有焦点，禁止滑动操作');
       return false;
     }
 
     // 如果有其他组件在滑动，先重置它们
     if (_currentSwipingComponent != null &&
         _currentSwipingComponent != component) {
-      debugPrint('SwipeStateManager.startSwipe: 重置其他组件的滑动状态');
+      // debugPrint('SwipeStateManager.startSwipe: 重置其他组件的滑动状态');
       _currentSwipingComponent!.resetSwipe();
     }
 
@@ -331,7 +326,7 @@ class SwipeStateManager {
     // 触发滑动开始回调
     if (_currentSwipingComponent != _selectedComponent) {
       _onSwipeStart?.call();
-      debugPrint('SwipeStateManager.startSwipe: 开始滑动 ${component.componentId}');
+      // debugPrint('SwipeStateManager.startSwipe: 开始滑动 ${component.componentId}');
     }
 
     // 开始滑动
