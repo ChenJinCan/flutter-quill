@@ -7,6 +7,15 @@ import '../../../document/nodes/block.dart';
 import '../../../document/nodes/line.dart';
 import 'swipe_manager.dart';
 
+// 调试配置
+const bool _kDebugDragSort = false; // 可以通过这个开关控制调试输出
+
+void _debugPrint(String message) {
+  if (_kDebugDragSort) {
+    debugPrint(message);
+  }
+}
+
 /// 用于存储TextLine位置信息的辅助类
 class _LineInfo {
   _LineInfo({
@@ -68,7 +77,7 @@ class DragSortOverlay {
     final swipeManager = SwipeStateManager();
     if (swipeManager.currentSwipingComponent != null &&
         swipeManager.currentSwipingComponent != component) {
-      debugPrint('DragSortOverlay.show: 有其他组件在滑动，不显示拖拽覆盖层');
+      _debugPrint('DragSortOverlay.show: 有其他组件在滑动，不显示拖拽覆盖层');
       return;
     }
 
@@ -116,7 +125,7 @@ class DragSortOverlay {
   /// 在焦点聚焦时隐藏覆盖层（由SwipeStateManager调用）
   static void hideOnFocus() {
     if (isVisible) {
-      debugPrint('DragSortOverlay.hideOnFocus: 编辑器获得焦点，隐藏拖拽覆盖层');
+      _debugPrint('DragSortOverlay.hideOnFocus: 编辑器获得焦点，隐藏拖拽覆盖层');
       hide();
     }
   }
@@ -126,37 +135,12 @@ class DragSortOverlay {
     _currentPosition = globalPosition;
     _handleEdgeScrolling(globalPosition);
     _overlayEntry?.markNeedsBuild();
-    debugPrint(
+    _debugPrint(
         'DragSortOverlay.updatePosition: 覆盖层位置更新 $globalPosition, 覆盖层可见: ${_overlayEntry != null}');
   }
 
-  /// 处理边缘滚动 - 屏幕边缘触发，编辑器边界限制
-  static void _handleEdgeScrolling(Offset position) {
-    if (_scrollController == null ||
-        !_scrollController!.hasClients ||
-        _context == null) {
-      return;
-    }
-
-    // 1. 根据屏幕边缘判断是否触发滚动操作
-    final mediaQuery = MediaQuery.of(_context!);
-    final screenHeight = mediaQuery.size.height;
-    final safeAreaTop = mediaQuery.padding.top;
-    final appBarHeight = _getAppBarHeight();
-
-    final effectiveTop = safeAreaTop + appBarHeight;
-    final effectiveBottom = screenHeight;
-
-    final distanceFromScreenTop = position.dy - effectiveTop;
-    final distanceFromScreenBottom = effectiveBottom - position.dy;
-
-    // 检查是否在屏幕边缘区域
-    bool inScreenTopEdge =
-        distanceFromScreenTop >= 0 && distanceFromScreenTop < _edgeZone;
-    bool inScreenBottomEdge =
-        distanceFromScreenBottom >= 0 && distanceFromScreenBottom < _edgeZone;
-
-    // 2. 根据QuillEditor边界判断是否还能继续滚动
+  /// 获取滚动能力（合并逻辑）
+  static (bool, bool) _getScrollCapabilities() {
     bool canScrollUp = false;
     bool canScrollDown = false;
 
@@ -180,13 +164,13 @@ class DragSortOverlay {
           canScrollUp = currentOffset > 0;
           canScrollDown = currentOffset < maxOffset;
 
-          debugPrint(
+          _debugPrint(
               '编辑器边界: 顶部=$editorTop, 底部=$editorBottom, 高度=${editorSize.height}');
-          debugPrint('滚动状态: 当前位置=$currentOffset, 最大位置=$maxOffset');
-          debugPrint('滚动能力: 可向上=$canScrollUp, 可向下=$canScrollDown');
+          _debugPrint('滚动状态: 当前位置=$currentOffset, 最大位置=$maxOffset');
+          _debugPrint('滚动能力: 可向上=$canScrollUp, 可向下=$canScrollDown');
         }
       } catch (e) {
-        debugPrint('获取编辑器边界失败: $e');
+        _debugPrint('获取编辑器边界失败: $e');
         // 如果无法获取编辑器边界，回退到基本的滚动检查
         final currentOffset = _scrollController!.offset;
         final maxOffset = _scrollController!.position.maxScrollExtent;
@@ -195,65 +179,70 @@ class DragSortOverlay {
       }
     }
 
-    debugPrint(
-        '屏幕边缘检测: 顶部距离=$distanceFromScreenTop, 底部距离=$distanceFromScreenBottom, 边缘区域=$_edgeZone');
-    debugPrint('屏幕边缘状态: 顶部边缘=$inScreenTopEdge, 底部边缘=$inScreenBottomEdge');
+    return (canScrollUp, canScrollDown);
+  }
 
-    // 3. 只根据屏幕边缘触发滚动，编辑器边界检查在_startAutoScroll中处理
-    int desiredDirection = 0;
-    bool shouldScroll = false;
-
-    if (inScreenTopEdge) {
-      // 在屏幕顶部边缘，尝试向上滚动
-      desiredDirection = -1;
-      shouldScroll = true;
-      debugPrint('触发向上滚动: 屏幕顶部边缘，可向上滚动=$canScrollUp');
-    } else if (inScreenBottomEdge) {
-      // 在屏幕底部边缘，尝试向下滚动
-      desiredDirection = 1;
-      shouldScroll = true;
-      debugPrint('触发向下滚动: 屏幕底部边缘，可向下滚动=$canScrollDown');
-    } else {
-      debugPrint('不触发滚动: 屏幕顶部边缘=$inScreenTopEdge, 屏幕底部边缘=$inScreenBottomEdge');
+  /// 处理边缘滚动 - 屏幕边缘触发，编辑器边界限制
+  static void _handleEdgeScrolling(Offset position) {
+    if (_scrollController == null ||
+        !_scrollController!.hasClients ||
+        _context == null) {
+      return;
     }
 
-    if (shouldScroll) {
-      // 在margin边界内，启动或更新滚动
-      final speedRatio = desiredDirection == -1
-          ? 1.0 - (distanceFromScreenTop / _edgeZone)
-          : 1.0 - (distanceFromScreenBottom / _edgeZone);
+    // 1. 计算屏幕边缘距离
+    final mediaQuery = MediaQuery.of(_context!);
+    final effectiveTop = mediaQuery.padding.top + _getAppBarHeight();
+    final effectiveBottom = mediaQuery.size.height;
 
+    final distanceFromScreenTop = position.dy - effectiveTop;
+    final distanceFromScreenBottom = effectiveBottom - position.dy;
+
+    // 检查是否在屏幕边缘区域
+    final inScreenTopEdge =
+        distanceFromScreenTop >= 0 && distanceFromScreenTop < _edgeZone;
+    final inScreenBottomEdge =
+        distanceFromScreenBottom >= 0 && distanceFromScreenBottom < _edgeZone;
+
+    // 2. 获取滚动能力（合并逻辑）
+    final (canScrollUp, canScrollDown) = _getScrollCapabilities();
+
+    _debugPrint(
+        '屏幕边缘检测: 顶部距离=$distanceFromScreenTop, 底部距离=$distanceFromScreenBottom');
+    _debugPrint('屏幕边缘状态: 顶部边缘=$inScreenTopEdge, 底部边缘=$inScreenBottomEdge');
+
+    // 3. 处理滚动逻辑
+    if (inScreenTopEdge || inScreenBottomEdge) {
+      final desiredDirection = inScreenTopEdge ? -1 : 1;
+      final distance =
+          inScreenTopEdge ? distanceFromScreenTop : distanceFromScreenBottom;
+
+      // 计算滚动速度
+      final speedRatio = 1.0 - (distance / _edgeZone);
       _currentScrollVelocity = desiredDirection *
           (_baseScrollSpeed +
               (_maxScrollSpeed - _baseScrollSpeed) * speedRatio);
       _lastScrollDirection = desiredDirection;
+
       _startAutoScroll();
-      debugPrint(
-          '在margin边界内，边缘滚动: 方向=$desiredDirection, 速度=$_currentScrollVelocity');
-    } else {
-      // 不在margin边界内
-      if (_isAutoScrolling) {
-        // 如果正在滚动，继续滚动但不更新速度
-        debugPrint('不在margin边界内但正在滚动，继续滚动直到到达编辑器边界');
-        // 不调用_stopAutoScroll()，让滚动继续进行
-        // 滚动会在_startAutoScroll中的边界检查时自然停止
-      } else {
-        debugPrint('不在margin边界内且未在滚动，不启动滚动');
-      }
+      _debugPrint('边缘滚动: 方向=$desiredDirection, 速度=$_currentScrollVelocity');
+    } else if (!_isAutoScrolling) {
+      _debugPrint('不在边缘区域且未在滚动');
     }
+    // 如果正在滚动但不在边缘，让滚动自然停止
   }
 
   /// 完成拖拽排序操作
   static void completeDragSort() {
-    debugPrint('DragSortOverlay.completeDragSort: 开始检查参数');
-    debugPrint('  _draggingComponent: ${_draggingComponent?.componentId}');
-    debugPrint('  _controller: ${_controller != null}');
-    debugPrint('  _insertionOffset: $_insertionOffset');
+    _debugPrint('DragSortOverlay.completeDragSort: 开始检查参数');
+    _debugPrint('  _draggingComponent: ${_draggingComponent?.componentId}');
+    _debugPrint('  _controller: ${_controller != null}');
+    _debugPrint('  _insertionOffset: $_insertionOffset');
 
     if (_draggingComponent == null ||
         _controller == null ||
         _insertionOffset == null) {
-      debugPrint('DragSortOverlay.completeDragSort: 缺少必要参数');
+      _debugPrint('DragSortOverlay.completeDragSort: 缺少必要参数');
       hide();
       return;
     }
@@ -262,7 +251,7 @@ class DragSortOverlay {
       _performDocumentReorder(
           _draggingComponent!, _controller!, _insertionOffset!);
     } catch (e) {
-      debugPrint('DragSortOverlay.completeDragSort: 拖拽排序失败: $e');
+      _debugPrint('DragSortOverlay.completeDragSort: 拖拽排序失败: $e');
     } finally {
       hide();
     }
@@ -278,13 +267,13 @@ class DragSortOverlay {
     // 如果插入位置在原位置范围内，不需要移动
     if (insertionOffset >= sourceOffset &&
         insertionOffset <= sourceOffset + sourceLength) {
-      debugPrint('DragSortOverlay._performDocumentReorder: 插入位置在原位置范围内，无需移动');
+      _debugPrint('DragSortOverlay._performDocumentReorder: 插入位置在原位置范围内，无需移动');
       return;
     }
 
-    debugPrint('DragSortOverlay._performDocumentReorder: 开始重排序');
-    debugPrint('  源位置: $sourceOffset, 长度: $sourceLength');
-    debugPrint('  目标位置: $insertionOffset');
+    _debugPrint('DragSortOverlay._performDocumentReorder: 开始重排序');
+    _debugPrint('  源位置: $sourceOffset, 长度: $sourceLength');
+    _debugPrint('  目标位置: $insertionOffset');
 
     // Step 1: 提取完整的 TextLine Delta（包含所有格式和属性）
     final completeLineDelta = controller.document
@@ -293,7 +282,7 @@ class DragSortOverlay {
 
     final textContent =
         controller.document.getPlainText(sourceOffset, sourceLength);
-    debugPrint('  移动的文本: "${textContent.trim()}"');
+    _debugPrint('  移动的文本: "${textContent.trim()}"');
 
     // Step 2: 设置 skipRequestKeyboard 避免自动聚焦键盘
     final originalSkipRequestKeyboard = controller.skipRequestKeyboard;
@@ -311,7 +300,7 @@ class DragSortOverlay {
       controller.replaceText(sourceOffset, sourceLength, '', null,
           shouldNotifyListeners: false);
 
-      debugPrint('  调整后的插入位置: $adjustedInsertionOffset');
+      _debugPrint('  调整后的插入位置: $adjustedInsertionOffset');
 
       // Step 5: 在新位置插入完整的 TextLine Delta
       // 确保插入位置不超出文档范围
@@ -331,7 +320,7 @@ class DragSortOverlay {
       controller.skipRequestKeyboard = originalSkipRequestKeyboard;
     }
 
-    debugPrint(
+    _debugPrint(
         'DragSortOverlay._performDocumentReorder: 重排序完成，插入位置: $adjustedInsertionOffset');
   }
 
@@ -378,7 +367,7 @@ class DragSortOverlay {
       // 检查是否已经到达编辑器边界
       if ((_currentScrollVelocity < 0 && currentOffset <= 0) ||
           (_currentScrollVelocity > 0 && currentOffset >= maxOffset)) {
-        debugPrint(
+        _debugPrint(
             '到达编辑器边界，停止滚动: 当前位置=$currentOffset, 最大位置=$maxOffset, 滚动方向=${_currentScrollVelocity < 0 ? "向上" : "向下"}');
         _stopAutoScroll();
         return;
@@ -404,7 +393,7 @@ class DragSortOverlay {
       // 使用安全的滚动方法
       if (!_safeScrollTo(newOffset)) {
         // 如果滚动失败，停止自动滚动
-        debugPrint('滚动失败，停止自动滚动: 目标位置=$newOffset, 当前位置=$currentOffset');
+        _debugPrint('滚动失败，停止自动滚动: 目标位置=$newOffset, 当前位置=$currentOffset');
         _stopAutoScroll();
       }
     });
@@ -419,17 +408,15 @@ class DragSortOverlay {
     _scrollTimer = null;
   }
 
-  /// 重置滚动状态
+  /// 重置滚动状态 - 复用_stopAutoScroll逻辑
   static void _resetScrollState() {
     _stopAutoScroll();
-    _currentScrollVelocity = 0;
-    _lastScrollDirection = 0;
   }
 
   /// 安全的滚动位置更新
   static bool _safeScrollTo(double targetOffset) {
     if (_scrollController == null || !_scrollController!.hasClients) {
-      debugPrint('_safeScrollTo失败: ScrollController为null或无客户端');
+      _debugPrint('_safeScrollTo失败: ScrollController为null或无客户端');
       return false;
     }
 
@@ -442,16 +429,16 @@ class DragSortOverlay {
 
       // 检查是否有意义的移动（避免微小的抖动）
       if ((clampedOffset - currentOffset).abs() < 0.1) {
-        debugPrint(
+        _debugPrint(
             '_safeScrollTo: 移动距离太小，跳过滚动 (${(clampedOffset - currentOffset).abs()})');
         return true;
       }
 
       _scrollController!.jumpTo(clampedOffset);
-      debugPrint('_safeScrollTo成功: 从$currentOffset滚动到$clampedOffset');
+      _debugPrint('_safeScrollTo成功: 从$currentOffset滚动到$clampedOffset');
       return true;
     } catch (e) {
-      debugPrint('_safeScrollTo异常: $e');
+      _debugPrint('_safeScrollTo异常: $e');
       return false;
     }
   }
@@ -594,30 +581,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
           left: currentPos.dx - 150,
           top: currentPos.dy - 20,
           child: IgnorePointer(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 300),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                widget.component.textContent.trim().isEmpty
-                    ? '空行'
-                    : widget.component.textContent.trim(),
-                style: const TextStyle(fontSize: 14, color: Colors.black87),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+            child: _buildDragPreview(widget.component.textContent),
           ),
         ),
       ],
@@ -664,7 +628,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
           });
         }
         DragSortOverlay._insertionOffset = result!.documentOffset;
-        debugPrint(
+        _debugPrint(
             '位置指示器更新: ${result!.insertionY}, 文档偏移: ${result!.documentOffset}');
       } else {
         if (mounted) {
@@ -681,7 +645,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
         });
       }
       DragSortOverlay._insertionOffset = null;
-      debugPrint('位置指示器更新失败: $e');
+      _debugPrint('位置指示器更新失败: $e');
     }
   }
 
@@ -778,8 +742,34 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
       // 如果超出范围，返回文档长度（末尾）
       return document.length;
     } catch (e) {
-      debugPrint('_getDocumentOffsetForLineIndex error: $e');
+      _debugPrint('_getDocumentOffsetForLineIndex error: $e');
       return widget.controller.document.length;
     }
+  }
+
+  /// 构建拖拽预览组件
+  Widget _buildDragPreview(String textContent) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        textContent.trim().isEmpty ? '空行' : textContent.trim(),
+        style: const TextStyle(fontSize: 14, color: Colors.black87),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
   }
 }
