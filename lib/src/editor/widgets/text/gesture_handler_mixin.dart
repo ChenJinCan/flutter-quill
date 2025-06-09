@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'swipe_manager.dart';
@@ -237,13 +235,17 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
-        (_longPressTimer?.isActive != true) && // 长按计时器未激活
         verticalDistance < horizontalDistance && // 水平移动必须大于垂直移动
         _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
-      // debugPrint('处理滑动手势，distance=$_totalDragDistance');
       final direction =
           delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
-      _swipeManager.startSwipe(this, direction, _totalDragDistance);
+
+      // 如果开始滑动，取消长按检测
+      if (_swipeManager.startSwipe(this, direction, _totalDragDistance)) {
+        _longPressTimer?.cancel();
+        _longPressTimer = null;
+        debugPrint('开始滑动: direction=$direction, distance=$_totalDragDistance');
+      }
     }
   }
 
@@ -266,7 +268,9 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     if (!_isLongPressing &&
         !_isDragging &&
         gestureConfig.enableSwipe &&
-        _shouldCompleteSwipe(horizontalDistance, verticalDistance)) {
+        _shouldCompleteSwipe(horizontalDistance, verticalDistance) &&
+        (_isSwipingLeft || _isSwipingRight)) {
+      // 确保当前确实在滑动状态
       final direction =
           delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
 
@@ -278,11 +282,9 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
           _onSwipeRight?.call();
         }
       }
-
-      // 无论是否聚焦都触发组件选中回调
       _swipeManager.selectComponent(this, direction);
-      // debugPrint(
-      //     '触发 onComponentSelected 回调: direction=$direction, hasFocus=$hasFocus');
+      debugPrint(
+          '滑动完成，触发选中: direction=$direction, horizontalDistance=$horizontalDistance');
     }
 
     // 结束滑动和长按检测
@@ -397,13 +399,17 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 检查是否应该完成滑动操作
   bool _shouldCompleteSwipe(
       double horizontalDistance, double verticalDistance) {
+    // 必须达到滑动阈值
     if (horizontalDistance < gestureConfig.swipeThreshold) return false;
 
+    // 水平移动必须明显大于垂直移动
     final ratio = horizontalDistance / (verticalDistance + 1.0);
     if (ratio < gestureConfig.horizontalToVerticalRatio) return false;
 
-    if (_consistentHorizontalCount < gestureConfig.consistentDirectionSamples)
+    // 必须有足够的连续方向移动
+    if (_consistentHorizontalCount < gestureConfig.consistentDirectionSamples) {
       return false;
+    }
 
     return true;
   }
@@ -504,7 +510,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 绘制滑动和选中效果的通用方法
   void paintSwipeEffects(PaintingContext context, Offset offset) {
     // 处理滑动效果
-    Offset effectiveOffset = offset;
+    var effectiveOffset = offset;
     if (!hasFocus) {
       if (_isSwipingLeft) {
         effectiveOffset = offset.translate(-_swipeOffset, 0);

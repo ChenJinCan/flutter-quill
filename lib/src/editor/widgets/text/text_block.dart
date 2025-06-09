@@ -21,7 +21,6 @@ import '../default_styles.dart';
 import '../delegate.dart';
 import '../link.dart';
 import 'gesture_handler_mixin.dart';
-import 'swipe_manager.dart';
 import 'text_line.dart';
 import 'text_selection.dart';
 import 'utils/text_block_utils.dart';
@@ -760,7 +759,7 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
 
     // 检查是否点击在任何TextLine上，如果是则不处理Block级别的手势
     if (event is PointerDownEvent) {
-      bool hitTextLine = _isPositionOnTextLine(event.localPosition);
+      final hitTextLine = _isPositionOnTextLine(event.localPosition);
       if (hitTextLine) {
         return;
       }

@@ -1,4 +1,3 @@
-import 'dart:async' show Timer;
 import 'dart:collection';
 import 'dart:math' as math;
 
@@ -845,6 +844,7 @@ class RenderEditableTextLine extends RenderEditableBox
   TextSelection textSelection;
   Color color;
   bool enableInteractiveSelection;
+  @override
   bool hasFocus = false;
   double devicePixelRatio;
   EdgeInsetsGeometry padding;
@@ -897,8 +897,11 @@ class RenderEditableTextLine extends RenderEditableBox
   ///
   /// [onSwipeLeft] 左滑完成时的回调
   /// [onSwipeRight] 右滑完成时的回调
-  void setSwipeCallbacks(
-      {VoidCallback? onSwipeLeft, VoidCallback? onSwipeRight}) {
+  @override
+  void setSwipeCallbacks({
+    VoidCallback? onSwipeLeft,
+    VoidCallback? onSwipeRight,
+  }) {
     this.onSwipeLeft = onSwipeLeft;
     this.onSwipeRight = onSwipeRight;
     // 同时设置混入类的回调
@@ -907,20 +910,6 @@ class RenderEditableTextLine extends RenderEditableBox
       onSwipeRight: onSwipeRight,
     );
     markNeedsPaint();
-  }
-
-  /// 设置长按拖拽回调函数
-  ///
-  /// [onLongPressStart] 长按开始时的回调
-  /// [onDragEnd] 拖拽结束时的回调
-  void setDragCallbacks({
-    VoidCallback? onLongPressStart,
-    VoidCallback? onDragEnd,
-  }) {
-    super.setDragCallbacks(
-      onLongPressStart: onLongPressStart,
-      onDragEnd: onDragEnd,
-    );
   }
 
   Iterable<RenderBox> get _children sync* {

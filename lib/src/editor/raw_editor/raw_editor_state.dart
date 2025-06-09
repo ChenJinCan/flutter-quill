@@ -28,6 +28,8 @@ import '../widgets/cursor.dart';
 import '../widgets/default_styles.dart';
 import '../widgets/link.dart';
 import '../widgets/proxy.dart';
+import '../widgets/text/drag_sort_overlay.dart' show DragSortOverlay;
+import '../widgets/text/swipe_manager.dart' show SwipeStateManager;
 import '../widgets/text/text_block.dart';
 import '../widgets/text/text_line.dart';
 import '../widgets/text/text_selection.dart';
@@ -38,8 +40,6 @@ import 'raw_editor_render_object.dart';
 import 'raw_editor_state_selection_delegate_mixin.dart';
 import 'raw_editor_state_text_input_client_mixin.dart';
 import 'scribble_focusable.dart';
-import '../widgets/text/swipe_manager.dart';
-import '../widgets/text/drag_sort_overlay.dart';
 
 class QuillRawEditorState extends EditorState
     with
@@ -939,16 +939,9 @@ class QuillRawEditorState extends EditorState
 
   /// 设置拖拽排序回调
   void _setupDragSortCallbacks() {
-    final swipeManager = SwipeStateManager()
-
-      // 设置拖拽回调
+    SwipeStateManager()
       ..setDragCallbacks(
-        onDragStart: () {
-          // 拖拽开始时的处理
-          // debugPrint('拖拽排序开始');
-          // 确保隐藏之前的覆盖层
-          DragSortOverlay.hide();
-        },
+        onDragStart: DragSortOverlay.hide,
         onDragUpdate: (globalPosition, draggingComponent) {
           // 显示或更新拖拽覆盖层
           if (!DragSortOverlay.isVisible && mounted && context.mounted) {
@@ -961,32 +954,23 @@ class QuillRawEditorState extends EditorState
               scrollController: _scrollController,
             );
           }
-
-          // 总是更新覆盖层位置
           DragSortOverlay.updatePosition(globalPosition);
-
-          // debugPrint('拖拽更新: ${globalPosition.dx}, ${globalPosition.dy}');
         },
         onDragEnd: (draggingComponent) {
           // 完成拖拽排序的文档重排序操作
           try {
             DragSortOverlay.completeDragSort();
           } catch (e) {
-            // debugPrint('拖拽排序文档操作失败: $e');
-            // 即使排序失败也要隐藏覆盖层
             DragSortOverlay.hide();
           }
-          // debugPrint('拖拽排序结束: ${draggingComponent.componentId}');
         },
         onHideDragOverlay: DragSortOverlay.hideOnFocus,
+      )
+      ..setSwipeCallbacks(
+        onSwipeStart: widget.config.onSwipeStart,
+        onSwipeEnd: widget.config.onSwipeEnd,
+        onComponentSelected: widget.config.onComponentSelected,
       );
-
-    // 设置滑动回调
-    swipeManager.setSwipeCallbacks(
-      onSwipeStart: widget.config.onSwipeStart,
-      onSwipeEnd: widget.config.onSwipeEnd,
-      onComponentSelected: widget.config.onComponentSelected,
-    );
   }
 
   // KeyboardVisibilityController only checks for keyboards that

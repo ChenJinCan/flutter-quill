@@ -39,7 +39,6 @@ class DragSortOverlay {
   static QuillController? _controller;
   static ScrollController? _scrollController;
   static BuildContext? _context;
-  static GlobalKey? _editorKey;
   static Offset? _currentPosition;
   static int? _insertionOffset;
 
@@ -75,7 +74,6 @@ class DragSortOverlay {
     _currentPosition = initialGlobalPosition;
     _context = context;
     _insertionOffset = null;
-    _editorKey = editorKey;
 
     _overlayEntry = OverlayEntry(
       builder: (context) => _DragOverlayWidget(
@@ -103,7 +101,6 @@ class DragSortOverlay {
     _currentPosition = null;
     _context = null;
     _insertionOffset = null;
-    _editorKey = null;
   }
 
   static void hideOnFocus() {
@@ -449,7 +446,7 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
         setState(() {
           _insertIndicatorPosition = Offset(0, result!.insertionY);
         });
-        DragSortOverlay._insertionOffset = result!.documentOffset;
+        DragSortOverlay._insertionOffset = result.documentOffset;
       } else if (mounted) {
         setState(() {
           _insertIndicatorPosition = null;
