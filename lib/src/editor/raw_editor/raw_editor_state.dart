@@ -939,22 +939,52 @@ class QuillRawEditorState extends EditorState
 
   /// 设置拖拽排序回调
   void _setupDragSortCallbacks() {
-    SwipeStateManager()
+    final swipeManager = SwipeStateManager();
+
+    // 设置编辑器引用
+    swipeManager.setEditorReferences(
+      controller: controller,
+      focusNode: widget.config.focusNode,
+      scrollController: _scrollController,
+    );
+
+    swipeManager
       ..setDragCallbacks(
-        onDragStart: DragSortOverlay.hide,
+        onDragStart: () {
+          debugPrint('拖拽开始回调被触发');
+          // 移除自动隐藏，让拖拽更新时再显示
+        },
         onDragUpdate: (globalPosition, draggingComponent) {
-          // 显示或更新拖拽覆盖层
+          debugPrint(
+              '拖拽更新回调被触发: $globalPosition, component=${draggingComponent.componentId}');
+
+          // 确保拖拽覆盖层总是显示
           if (!DragSortOverlay.isVisible && mounted && context.mounted) {
-            DragSortOverlay.show(
-              context: context,
-              component: draggingComponent,
-              controller: controller,
-              editorKey: _editorKey,
-              initialGlobalPosition: globalPosition,
-              scrollController: _scrollController,
-            );
+            debugPrint('显示拖拽覆盖层');
+            try {
+              DragSortOverlay.show(
+                context: context,
+                component: draggingComponent,
+                controller: controller,
+                editorKey: _editorKey,
+                initialGlobalPosition: globalPosition,
+                scrollController: _scrollController,
+              );
+              debugPrint('拖拽覆盖层显示成功: isVisible=${DragSortOverlay.isVisible}');
+            } catch (e) {
+              debugPrint('显示拖拽覆盖层失败: $e');
+            }
+          } else {
+            debugPrint(
+                '拖拽覆盖层状态: isVisible=${DragSortOverlay.isVisible}, mounted=$mounted, context.mounted=${context.mounted}');
           }
-          DragSortOverlay.updatePosition(globalPosition);
+
+          // 无论如何都尝试更新位置
+          if (DragSortOverlay.isVisible) {
+            DragSortOverlay.updatePosition(globalPosition);
+          } else {
+            debugPrint('覆盖层不可见，跳过位置更新');
+          }
         },
         onDragEnd: (draggingComponent) {
           // 完成拖拽排序的文档重排序操作

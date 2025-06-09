@@ -10,10 +10,10 @@ class GestureConfig {
     this.enableSwipe = true,
     this.enableLongPress = true,
     this.enableDrag = true,
-    this.swipeThreshold = 60,
-    this.moveThreshold = 15,
-    this.horizontalToVerticalRatio = 2,
-    this.consistentDirectionSamples = 3,
+    this.swipeThreshold = 40, // 降低从60到40
+    this.moveThreshold = 10, // 降低从15到10
+    this.horizontalToVerticalRatio = 1.5, // 降低从2到1.5
+    this.consistentDirectionSamples = 2, // 降低从3到2
     this.longPressDuration = const Duration(milliseconds: 700),
     this.maxSwipeOffset = 40,
   });
@@ -132,31 +132,67 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 子类可以重写此方法来自定义光标检测逻辑
   bool shouldPreventGestureWhenHasCursor() => false;
 
+  /// 清除组件的选中状态（由SwipeStateManager调用）
+  void clearSelectionState() {
+    if (_isSelected) {
+      debugPrint('清除组件选中状态: ${componentId}');
+      _isSelected = false;
+      markNeedsPaint();
+    }
+  }
+
+  /// 检查是否正在滚动
+  bool get _isScrolling {
+    return _swipeManager.scrollController != null &&
+        _swipeManager.scrollController!.hasClients &&
+        _swipeManager.scrollController!.position.isScrollingNotifier.value;
+  }
+
   /// 处理指针事件的通用逻辑
+  ///
+  /// 新的简化策略：
+  /// 1. 每个组件独立处理自己的手势
+  /// 2. 优先级：拖拽 > 滚动 > 滑动
+  /// 3. 移除复杂的组件间冲突检查
   void handleGestureEvent(PointerEvent event, BoxHitTestEntry entry) {
     // 检查是否应该处理手势
     if (!shouldHandleGestureEvent()) {
       return;
     }
 
-    // 如果全局正在拖拽或滑动，但当前组件不是操作者，则消费事件避免滚动冲突
-    // 但是要允许拖拽时的边缘滚动
-    if (_swipeManager.shouldPreventOtherGestures() &&
-        event is PointerMoveEvent &&
-        !_isDragging &&
-        !_isSwipingLeft &&
-        !_isSwipingRight) {
-      // 检查是否正在进行拖拽排序，如果是则允许滚动
-      if (_swipeManager.isDragging) {
-        // debugPrint('拖拽排序中，允许滚动事件通过');
-        // 不return，让事件继续传递以支持边缘滚动
-      } else {
-        // 只有当前组件不是操作者时才消费事件
-        debugPrint('阻止滚动，消费移动事件 - 其他组件正在操作');
-        return;
+    // 如果当前组件正在拖拽，优先处理拖拽
+    if (_isDragging) {
+      if (event is PointerMoveEvent && _dragStartPosition != null) {
+        _updateDragPosition(event.localPosition, event.position);
+      } else if (event is PointerUpEvent && _dragStartPosition != null) {
+        _handleDragEnd();
       }
+      return;
     }
 
+    // 如果当前组件正在滑动，优先处理滑动
+    if (_isSwipingLeft || _isSwipingRight) {
+      debugPrint('当前组件正在滑动，优先处理滑动事件');
+      if (event is PointerMoveEvent && _dragStartPosition != null) {
+        _handlePointerMove(event);
+      } else if (event is PointerUpEvent && _dragStartPosition != null) {
+        _handlePointerUp(event);
+      } else if (event is PointerCancelEvent) {
+        _handlePointerCancel();
+      }
+      return;
+    }
+
+    // 如果正在滚动，让滚动优先（除非已经在处理手势）
+    if (_isScrolling && !_isLongPressing && !_isDragging) {
+      if (_longPressTimer != null) {
+        _cancelLongPressDetection();
+        debugPrint('滚动优先，取消长按检测');
+      }
+      return;
+    }
+
+    // 处理新的手势事件
     if (event is PointerDownEvent) {
       _handlePointerDown(event);
     } else if (event is PointerMoveEvent && _dragStartPosition != null) {
@@ -164,35 +200,28 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     } else if (event is PointerUpEvent && _dragStartPosition != null) {
       _handlePointerUp(event);
     } else if (event is PointerCancelEvent) {
-      // 处理指针取消事件，但不取消拖拽状态
+      _handlePointerCancel();
     }
   }
 
   /// 处理按下事件
   void _handlePointerDown(PointerDownEvent event) {
+    // 重置当前组件的状态
     _dragStartPosition = event.localPosition;
     _totalDragDistance = 0.0;
     _horizontalMovements.clear();
     _consistentHorizontalCount = 0;
 
-    // 在聚焦状态下的处理
-    if (hasFocus) {
-      final hasCursorOnThisComponent = shouldPreventGestureWhenHasCursor();
-      if (hasCursorOnThisComponent) {
-        debugPrint('当前组件被选中且聚焦，不启动任何手势检测');
-        return;
-      } else if (gestureConfig.enableLongPress && gestureConfig.enableDrag) {
-        // 其他组件在聚焦状态下只允许长按拖动
-        _startLongPressDetection(event.localPosition);
-        debugPrint('其他组件在聚焦状态下开始长按检测');
-        return;
-      }
+    debugPrint('PointerDown: 开始新的手势检测 ${event.localPosition}');
+
+    // 如果当前组件有光标，禁用所有手势
+    if (hasFocus && shouldPreventGestureWhenHasCursor()) {
+      debugPrint('当前组件被选中且聚焦，不启动任何手势检测');
+      return;
     }
 
-    // 非聚焦状态下的处理
-    if (gestureConfig.enableLongPress &&
-        gestureConfig.enableDrag &&
-        !shouldPreventGestureWhenHasCursor()) {
+    // 启动长按检测（用于拖拽）
+    if (gestureConfig.enableLongPress && gestureConfig.enableDrag) {
       _startLongPressDetection(event.localPosition);
       debugPrint('开始长按检测: ${event.localPosition}');
     }
@@ -203,94 +232,160 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     final delta = event.localPosition - _dragStartPosition!;
     final horizontalDistance = delta.dx.abs();
     final verticalDistance = delta.dy.abs();
-    _totalDragDistance =
-        sqrt(delta.dx * delta.dx + delta.dy * delta.dy); // 计算总的移动距离
+    _totalDragDistance = sqrt(delta.dx * delta.dx + delta.dy * delta.dy);
+
+    debugPrint(
+        'PointerMove: delta=$delta, horizontal=$horizontalDistance, vertical=$verticalDistance');
+
+    // 如果正在滚动，取消长按检测（但不中断已经开始的拖拽）
+    if (_isScrolling && !_isDragging && !_isLongPressing) {
+      if (_longPressTimer != null) {
+        _cancelLongPressDetection();
+        debugPrint('移动中检测到滚动，取消长按检测');
+      }
+      return;
+    }
 
     // 记录水平移动方向
     _recordHorizontalMovement(delta.dx, horizontalDistance);
 
-    // debugPrint(
-    //     '移动事件: hDistance=$horizontalDistance, vDistance=$verticalDistance, '
-    //     'ratio=${horizontalDistance / (verticalDistance + 1)}, '
-    //     'consistent=$_consistentHorizontalCount, '
-    //     'isLongPressing=$_isLongPressing, isDragging=$_isDragging');
-
-    // 拖拽处理（最高优先级）
+    // 如果已经在拖拽，更新拖拽位置
     if (_isDragging) {
       _updateDragPosition(event.localPosition, event.position);
       return;
     }
 
-    // 长按后开始拖拽
-    if (_isLongPressing &&
-        !_isDragging &&
-        _totalDragDistance > gestureConfig.moveThreshold) {
-      // debugPrint('长按后首次移动，开始拖拽: position=${event.localPosition}');
-      _startDragging(event.localPosition);
-      _updateDragPosition(event.localPosition);
+    // 如果已经在长按状态，直接更新拖拽位置（优先级最高，不受滚动影响）
+    if (_isLongPressing) {
+      if (_isDragging) {
+        // 已经在拖拽，直接更新位置
+        _updateDragPosition(event.localPosition, event.position);
+      } else {
+        // 长按状态但还未开始拖拽，立即开始
+        debugPrint('长按状态下开始移动，立即开始拖拽');
+        _startDragging(event.localPosition);
+        if (_isDragging) {
+          _updateDragPosition(event.localPosition, event.position);
+        }
+      }
       return;
     }
 
-    // 滑动手势处理（严格限制，不能干扰拖拽）
+    // 简化的滑动检测：只检查基本条件
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
-        verticalDistance < horizontalDistance && // 水平移动必须大于垂直移动
-        _shouldTriggerSwipe(horizontalDistance, verticalDistance)) {
+        !_isScrolling &&
+        horizontalDistance > gestureConfig.moveThreshold &&
+        verticalDistance < horizontalDistance &&
+        !(_isSwipingLeft || _isSwipingRight)) {
       final direction =
           delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
 
-      // 如果开始滑动，取消长按检测
-      if (_swipeManager.startSwipe(this, direction, _totalDragDistance)) {
-        _longPressTimer?.cancel();
-        _longPressTimer = null;
-        debugPrint('开始滑动: direction=$direction, distance=$_totalDragDistance');
+      // 检查是否有其他组件在滑动，如果有则阻止当前滑动
+      if (_swipeManager.currentSwipingComponent != null &&
+          _swipeManager.currentSwipingComponent != this) {
+        debugPrint('其他组件正在滑动，阻止当前组件滑动');
+        return;
+      }
+
+      // 通知SwipeStateManager开始滑动（用于互斥）
+      if (_swipeManager.startSwipe(this, direction, horizontalDistance)) {
+        // 设置本地滑动状态
+        if (direction == SwipeDirection.left) {
+          _isSwipingLeft = true;
+          _isSwipingRight = false;
+        } else {
+          _isSwipingRight = true;
+          _isSwipingLeft = false;
+        }
+        _swipeOffset =
+            horizontalDistance.clamp(0.0, gestureConfig.maxSwipeOffset);
+        markNeedsPaint();
+
+        debugPrint('开始滑动: direction=$direction, distance=$horizontalDistance');
+      } else {
+        debugPrint('SwipeStateManager拒绝滑动');
+      }
+      return;
+    }
+
+    // 如果已经在滑动中，更新滑动偏移量
+    if (_isSwipingLeft || _isSwipingRight) {
+      final direction =
+          delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
+
+      // 确保滑动方向一致
+      if ((_isSwipingLeft && direction == SwipeDirection.left) ||
+          (_isSwipingRight && direction == SwipeDirection.right)) {
+        _swipeOffset =
+            horizontalDistance.clamp(0.0, gestureConfig.maxSwipeOffset);
+        markNeedsPaint();
+        debugPrint('更新滑动偏移: direction=$direction, offset=$_swipeOffset');
       }
     }
   }
 
   /// 处理抬起事件
   void _handlePointerUp(PointerUpEvent event) {
-    // debugPrint('抬起事件: isDragging=$_isDragging');
+    debugPrint(
+        '抬起事件: isDragging=$_isDragging, isLongPressing=$_isLongPressing, isSwipingLeft=$_isSwipingLeft, isSwipingRight=$_isSwipingRight');
 
+    // 如果正在拖拽，结束拖拽
     if (_isDragging) {
-      // 拖拽结束
-      _cancelLongPressDetection();
-      //  debugPrint('拖拽结束');
+      _handleDragEnd();
       return;
     }
 
     // 处理滑动手势结束
-    final delta = event.localPosition - _dragStartPosition!;
-    final horizontalDistance = delta.dx.abs();
-    final verticalDistance = delta.dy.abs();
+    if (_isSwipingLeft || _isSwipingRight) {
+      final delta = event.localPosition - _dragStartPosition!;
+      final horizontalDistance = delta.dx.abs();
+      final verticalDistance = delta.dy.abs();
 
-    if (!_isLongPressing &&
-        !_isDragging &&
-        gestureConfig.enableSwipe &&
-        _shouldCompleteSwipe(horizontalDistance, verticalDistance) &&
-        (_isSwipingLeft || _isSwipingRight)) {
-      // 确保当前确实在滑动状态
-      final direction =
-          delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
-
-      // 只有在非聚焦状态下才触发滑动回调
-      if (!hasFocus) {
-        if (direction == SwipeDirection.left) {
-          _onSwipeLeft?.call();
-        } else {
-          _onSwipeRight?.call();
-        }
-      }
-      _swipeManager.selectComponent(this, direction);
       debugPrint(
-          '滑动完成，触发选中: direction=$direction, horizontalDistance=$horizontalDistance');
+          '滑动检查: horizontalDistance=$horizontalDistance, verticalDistance=$verticalDistance');
+
+      // 简化的滑动完成判断
+      if (horizontalDistance >= gestureConfig.swipeThreshold) {
+        final direction =
+            delta.dx < 0 ? SwipeDirection.left : SwipeDirection.right;
+
+        debugPrint('滑动完成: direction=$direction, distance=$horizontalDistance');
+
+        // 触发滑动回调
+        if (!hasFocus) {
+          if (direction == SwipeDirection.left) {
+            _onSwipeLeft?.call();
+            debugPrint('触发左滑回调');
+          } else {
+            _onSwipeRight?.call();
+            debugPrint('触发右滑回调');
+          }
+        }
+
+        // 设置选中状态
+        _isSelected = true;
+        debugPrint('设置组件为选中状态');
+
+        // 调用SwipeStateManager的选中回调
+        _swipeManager.selectComponent(this, direction);
+        debugPrint('触发ComponentSelect回调');
+      } else {
+        debugPrint(
+            '滑动距离不足，取消滑动 (需要距离>=${gestureConfig.swipeThreshold}, 当前:$horizontalDistance)');
+      }
+
+      // 重置滑动状态
+      _isSwipingLeft = false;
+      _isSwipingRight = false;
+      _swipeOffset = 0.0;
+      markNeedsPaint();
+      debugPrint('重置滑动视觉偏移');
     }
 
-    // 结束滑动和长按检测
-    _swipeManager.endSwipe(this);
-    _cancelLongPressDetection();
-    _resetGestureState();
+    // 重置手势检测状态
+    _resetGestureDetectionStates();
   }
 
   /// 记录水平移动方向
@@ -319,27 +414,25 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   void _startLongPressDetection(Offset position) {
     _longPressTimer?.cancel();
     _longPressTimer = Timer(gestureConfig.longPressDuration, () {
+      // 在长按定时器触发时再次检查是否有滚动发生
+      if (_isScrolling) {
+        debugPrint('长按定时器触发时检测到滚动，取消长按拖拽');
+        return;
+      }
+
       if (!_isLongPressing && !_isDragging) {
         if (!_swipeManager.shouldAllowDrag(this)) {
-          // debugPrint('长按检测: 当前组件不允许拖拽');
+          debugPrint('长按检测: 当前组件不允许拖拽');
           return;
         }
 
+        // 长按检测成功，立即开始拖拽并显示预览
         _isLongPressing = true;
-        final success = _swipeManager.startDrag(this);
-        if (!success) {
-          // debugPrint('长按检测: SwipeStateManager拒绝拖拽');
-          _isLongPressing = false;
-          return;
-        }
-
         _onLongPressStart?.call();
-        // debugPrint('长按检测成功，进入长按状态');
+        debugPrint('长按检测成功，立即开始拖拽');
 
-        // 立即开始拖拽
-        _isDragging = true;
-        final globalPosition = localToGlobal(position);
-        _swipeManager.updateDrag(globalPosition);
+        // 立即开始拖拽，显示预览
+        _startDragging(position);
         markNeedsPaint();
       }
     });
@@ -351,8 +444,11 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     _longPressTimer = null;
     if (_isLongPressing || _isDragging) {
       _isLongPressing = false;
-      _isDragging = false;
-      _swipeManager.endDrag();
+      if (_isDragging) {
+        _isDragging = false;
+        _swipeManager.endDrag();
+        // debugPrint('取消长按检测，结束拖拽状态');
+      }
       _onDragEnd?.call();
       // debugPrint('取消长按检测，重置状态');
       markNeedsPaint();
@@ -361,11 +457,25 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   /// 开始拖拽
   void _startDragging(Offset position) {
-    if (_isLongPressing) {
+    if (_isLongPressing && !_isDragging) {
+      debugPrint('准备开始拖拽，调用 SwipeStateManager.startDrag');
+
+      // 现在真正开始拖拽，调用 SwipeStateManager.startDrag
+      final success = _swipeManager.startDrag(this);
+      if (!success) {
+        debugPrint('开始拖拽: SwipeStateManager拒绝拖拽');
+        return;
+      }
+
       _isDragging = true;
       final globalPosition = localToGlobal(position);
+      debugPrint('开始拖拽成功，更新拖拽位置: $globalPosition');
       _swipeManager.updateDrag(globalPosition);
       markNeedsPaint();
+      debugPrint('真正开始拖拽，现在会阻止其他手势');
+    } else {
+      debugPrint(
+          '开始拖拽失败: isLongPressing=$_isLongPressing, isDragging=$_isDragging');
     }
   }
 
@@ -376,8 +486,11 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       // 优先使用屏幕绝对坐标，如果没有则使用转换后的坐标
       final globalPosition =
           screenGlobalPosition ?? localToGlobal(localPosition);
+      debugPrint('更新拖拽位置: local=$localPosition, global=$globalPosition');
       _swipeManager.updateDrag(globalPosition);
       markNeedsPaint();
+    } else {
+      debugPrint('尝试更新拖拽位置但未在拖拽状态: isDragging=$_isDragging');
     }
   }
 
@@ -420,41 +533,96 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     _consistentHorizontalCount = 0;
   }
 
+  /// 处理拖拽结束
+  void _handleDragEnd() {
+    if (_isDragging) {
+      _cancelLongPressDetection();
+      debugPrint('拖拽结束');
+    }
+    _resetAllGestureStates();
+  }
+
+  /// 处理指针取消事件
+  void _handlePointerCancel() {
+    debugPrint('指针取消事件');
+    _resetAllGestureStates();
+  }
+
+  /// 重置所有手势状态
+  void _resetAllGestureStates() {
+    _dragStartPosition = null;
+    _totalDragDistance = 0.0;
+
+    // 只清理当前组件相关的状态，避免影响其他组件
+    if (_swipeManager.currentSwipingComponent == this) {
+      debugPrint('重置当前组件的滑动状态');
+      _swipeManager.endSwipe(this);
+    }
+    // 移除强制重置其他组件的逻辑，避免过度清理
+
+    _cancelLongPressDetection();
+    _resetGestureState();
+    debugPrint('重置所有手势状态');
+  }
+
+  /// 重置手势检测状态（不影响滑动选中状态）
+  void _resetGestureDetectionStates() {
+    _dragStartPosition = null;
+    _totalDragDistance = 0.0;
+    _cancelLongPressDetection();
+    _resetGestureState();
+    debugPrint('重置手势检测状态');
+  }
+
+  /// 手势处理流程说明：
+  /// PointerDown -> 开始长按检测（如果允许）
+  /// PointerMove -> 检查优先级：滚动 > 拖拽 > 滑动
+  /// PointerUp -> 根据当前状态结束相应手势并重置所有状态
+  ///
+  /// 处理按下事件
+
   // SwipeableComponent 接口实现
 
   @override
   bool performSwipe(SwipeDirection direction, double offset) {
+    debugPrint(
+        'performSwipe: direction=$direction, offset=$offset, 当前状态: isSwipingLeft=$_isSwipingLeft, isSwipingRight=$_isSwipingRight');
+
     switch (direction) {
       case SwipeDirection.left:
         if (!_isSwipingLeft) {
           _isSwipingLeft = true;
           _isSwipingRight = false;
           _swipeOffset = 0.0;
+          debugPrint('performSwipe: 设置左滑状态');
         }
         _swipeOffset = offset.clamp(0.0, gestureConfig.maxSwipeOffset);
         markNeedsPaint();
+        debugPrint('performSwipe: 左滑偏移更新为 $_swipeOffset');
         return true;
       case SwipeDirection.right:
         if (!_isSwipingRight) {
           _isSwipingRight = true;
           _isSwipingLeft = false;
           _swipeOffset = 0.0;
+          debugPrint('performSwipe: 设置右滑状态');
         }
         _swipeOffset = offset.clamp(0.0, gestureConfig.maxSwipeOffset);
         markNeedsPaint();
+        debugPrint('performSwipe: 右滑偏移更新为 $_swipeOffset');
         return true;
     }
   }
 
   @override
   void resetSwipe() {
+    debugPrint(
+        'resetSwipe: 重置前状态: isSwipingLeft=$_isSwipingLeft, isSwipingRight=$_isSwipingRight, swipeOffset=$_swipeOffset');
     _isSwipingLeft = false;
     _isSwipingRight = false;
     _swipeOffset = 0.0;
-    _dragStartPosition = null;
-    _totalDragDistance = 0.0;
-    _resetGestureState();
     markNeedsPaint();
+    debugPrint('resetSwipe: 重置滑动视觉状态完成');
   }
 
   @override
@@ -467,6 +635,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       }
     }
     resetSwipe();
+    debugPrint('结束滑动');
   }
 
   @override
@@ -479,7 +648,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   @override
   bool startDrag() {
-    if (_isLongPressing) {
+    if (_isLongPressing && !_isDragging) {
       _isDragging = true;
       markNeedsPaint();
       return true;

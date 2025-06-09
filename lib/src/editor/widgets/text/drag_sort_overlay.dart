@@ -7,7 +7,7 @@ import '../../../document/nodes/block.dart';
 import '../../../document/nodes/line.dart';
 import 'swipe_manager.dart';
 
-const bool _kDebugDragSort = false;
+const bool _kDebugDragSort = true;
 
 void _debugPrint(String message) {
   if (_kDebugDragSort) {
@@ -59,9 +59,13 @@ class DragSortOverlay {
     required Offset initialGlobalPosition,
     ScrollController? scrollController,
   }) {
+    _debugPrint(
+        'DragSortOverlay.show: component=${component.componentId}, textContent="${component.textContent}", position=$initialGlobalPosition');
+
     final swipeManager = SwipeStateManager();
     if (swipeManager.currentSwipingComponent != null &&
         swipeManager.currentSwipingComponent != component) {
+      _debugPrint('DragSortOverlay.show: 其他组件正在滑动，拒绝显示');
       return;
     }
 
@@ -85,7 +89,9 @@ class DragSortOverlay {
       ),
     );
 
+    _debugPrint('DragSortOverlay.show: 正在插入覆盖层到Overlay');
     Overlay.of(context).insert(_overlayEntry!);
+    _debugPrint('DragSortOverlay.show: 覆盖层已插入，isVisible=${isVisible}');
   }
 
   static bool get isVisible => _overlayEntry != null;
@@ -380,6 +386,9 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
     final currentPos =
         DragSortOverlay._currentPosition ?? widget.initialPosition;
 
+    _debugPrint(
+        '_DragOverlayWidget.build: currentPos=$currentPos, textContent="${widget.component.textContent}"');
+
     // 立即同步更新插入指示器位置
     _updateInsertIndicator(currentPos);
 
@@ -547,6 +556,8 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
   /// 构建拖拽预览组件
   Widget _buildDragPreview(String textContent) {
+    debugPrint('DragSortOverlay._buildDragPreview: textContent="$textContent"');
+
     return Container(
       constraints: const BoxConstraints(maxWidth: 300),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
