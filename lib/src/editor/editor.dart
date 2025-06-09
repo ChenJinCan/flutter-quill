@@ -238,18 +238,19 @@ class QuillEditorState extends State<QuillEditor>
     controller.addListener(_onSelectionChanged);
 
     // 设置滑动管理器的回调
-    _swipeManager.setSwipeCallbacks(
-      onSwipeStart: config.onSwipeStart,
-      onSwipeEnd: config.onSwipeEnd,
-      onComponentSelected: config.onComponentSelected,
-    );
+    _swipeManager
+      ..setSwipeCallbacks(
+        onSwipeStart: config.onSwipeStart,
+        onSwipeEnd: config.onSwipeEnd,
+        onComponentSelected: config.onComponentSelected,
+      )
 
-    // 设置滑动管理器的编辑器引用
-    _swipeManager.setEditorReferences(
-      controller: controller,
-      focusNode: focusNode,
-      scrollController: widget.scrollController,
-    );
+      // 设置滑动管理器的编辑器引用
+      ..setEditorReferences(
+        controller: controller,
+        focusNode: focusNode,
+        scrollController: widget.scrollController,
+      );
   }
 
   @override

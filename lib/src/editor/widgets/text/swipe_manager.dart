@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../../controller/quill_controller.dart';
-import '../../../document/nodes/node.dart';
-import '../../../document/nodes/line.dart';
 import '../../../document/nodes/block.dart';
+import '../../../document/nodes/line.dart';
+import '../../../document/nodes/node.dart';
 
 /// 全局滑动状态管理器
 /// 确保一次只能有一个组件处于滑动状态，并管理滚动冲突
 class SwipeStateManager {
-  static final SwipeStateManager _instance = SwipeStateManager._internal();
   factory SwipeStateManager() => _instance;
   SwipeStateManager._internal();
+  static final SwipeStateManager _instance = SwipeStateManager._internal();
 
   /// 当前正在滑动的组件
   SwipeableComponent? _currentSwipingComponent;
@@ -23,6 +23,9 @@ class SwipeStateManager {
 
   /// QuillController引用，用于在拖拽时取消focus
   QuillController? _controller;
+
+  /// ScrollController引用，用于监听滚动事件
+  ScrollController? get scrollController => _scrollController;
 
   /// FocusNode引用，用于在拖拽时取消focus
   FocusNode? _focusNode;
