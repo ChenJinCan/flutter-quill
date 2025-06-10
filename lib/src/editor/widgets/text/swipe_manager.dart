@@ -391,13 +391,15 @@ class SwipeStateManager {
   }
 
   /// 清除选中状态
-  void clearSelection() {
+  void clearSelection({bool triggerCallback = true}) {
     if (_selectedComponent != null) {
       final component = _selectedComponent!;
       component.setSelected(false);
 
       // 触发组件取消选中回调
-      _onComponentUnselected?.call(component.lineNode, component.block);
+      if (triggerCallback) {
+        _onComponentUnselected?.call(component.lineNode, component.block);
+      }
       _selectedComponent = null;
     }
   }
@@ -406,6 +408,12 @@ class SwipeStateManager {
   void clearCurrentSwipingComponent() {
     debugPrint(
         'SwipeStateManager.clearCurrentSwipingComponent: 清理当前滑动组件=${_currentSwipingComponent?.componentId}');
+    _currentSwipingComponent = null;
+  }
+
+  void resetSwipe() {
+    debugPrint('SwipeStateManager.resetAll: 重置所有状态');
+    _currentSwipingComponent?.resetSwipe();
     _currentSwipingComponent = null;
   }
 
