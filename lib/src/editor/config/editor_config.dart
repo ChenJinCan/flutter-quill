@@ -91,6 +91,7 @@ class QuillEditorConfig {
     this.onSwipeStart,
     this.onSwipeEnd,
     this.onComponentSelected,
+    this.onComponentUnSelected,
   });
 
   @experimental
@@ -486,6 +487,9 @@ class QuillEditorConfig {
   final void Function(Line? line, Block? block, SwipeDirection direction,
       int documentOffset, int documentLength)? onComponentSelected;
 
+  /// 组件取消选中回调
+  final void Function(Line? line, Block? block)? onComponentUnSelected;
+
   // IMPORTANT For project authors: The copyWith()
   // should be manually updated each time we add or remove a property
 
@@ -551,6 +555,7 @@ class QuillEditorConfig {
     void Function(Line? line, Block? block, SwipeDirection direction,
             int documentOffset, int documentLength)?
         onComponentSelected,
+    void Function(Line? line, Block? block)? onComponentUnSelected,
   }) {
     return QuillEditorConfig(
       customLeadingBlockBuilder:
@@ -623,6 +628,8 @@ class QuillEditorConfig {
       onSwipeStart: onSwipeStart ?? this.onSwipeStart,
       onSwipeEnd: onSwipeEnd ?? this.onSwipeEnd,
       onComponentSelected: onComponentSelected ?? this.onComponentSelected,
+      onComponentUnSelected:
+          onComponentUnSelected ?? this.onComponentUnSelected,
     );
   }
 }

@@ -1,3 +1,5 @@
+// ignore_for_file: cascade_invocations
+
 import 'package:flutter/material.dart';
 
 import '../../../controller/quill_controller.dart';
@@ -51,6 +53,9 @@ class SwipeStateManager {
   /// 组件选中回调
   void Function(Line? line, Block? block, SwipeDirection direction,
       int documentOffset, int documentLength)? _onComponentSelected;
+
+  /// 组件取消选中回调
+  void Function(Line? line, Block? block)? _onComponentUnselected;
 
   /// 焦点聚焦时隐藏拖拽覆盖层的回调
   VoidCallback? _onHideDragOverlay;
@@ -112,7 +117,12 @@ class SwipeStateManager {
     // 清除选中状态
     if (_selectedComponent != null) {
       // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 清除选中状态');
-      _selectedComponent!.setSelected(false);
+      final component = _selectedComponent!;
+      component.setSelected(false);
+
+      // 触发组件取消选中回调
+      _onComponentUnselected?.call(component.lineNode, component.block);
+
       _selectedComponent = null;
     }
 
@@ -146,7 +156,12 @@ class SwipeStateManager {
     // 清除选中状态（如果存在）
     if (_selectedComponent != null) {
       debugPrint('SwipeStateManager: 清除当前选中组件');
-      _selectedComponent!.setSelected(false);
+      final component = _selectedComponent!;
+      component.setSelected(false);
+
+      // 触发组件取消选中回调
+      _onComponentUnselected?.call(component.lineNode, component.block);
+
       _selectedComponent = null;
     }
 
@@ -185,10 +200,12 @@ class SwipeStateManager {
     void Function(Line? line, Block? block, SwipeDirection direction,
             int documentOffset, int documentLength)?
         onComponentSelected,
+    void Function(Line? line, Block? block)? onComponentUnselected,
   }) {
     _onSwipeStart = onSwipeStart;
     _onSwipeEnd = onSwipeEnd;
     _onComponentSelected = onComponentSelected;
+    _onComponentUnselected = onComponentUnselected;
   }
 
   /// 设置拖拽排序回调
@@ -404,7 +421,12 @@ class SwipeStateManager {
   /// 清除选中状态
   void clearSelection() {
     if (_selectedComponent != null) {
-      _selectedComponent!.setSelected(false);
+      final component = _selectedComponent!;
+      component.setSelected(false);
+
+      // 触发组件取消选中回调
+      _onComponentUnselected?.call(component.lineNode, component.block);
+
       _selectedComponent = null;
     }
   }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/rendering.dart';
 
 import 'swipe_manager.dart';
@@ -70,9 +69,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   // 手势检测状态
   Offset? _dragStartPosition;
-  double _totalDragDistance = 0;
   final List<double> _horizontalMovements = [];
-  int _consistentHorizontalCount = 0;
 
   // 选中状态
   bool _isSelected = false;
@@ -135,7 +132,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 清除组件的选中状态（由SwipeStateManager调用）
   void clearSelectionState() {
     if (_isSelected) {
-      debugPrint('清除组件选中状态: ${componentId}');
       _isSelected = false;
       markNeedsPaint();
     }
@@ -208,9 +204,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   void _handlePointerDown(PointerDownEvent event) {
     // 重置当前组件的状态
     _dragStartPosition = event.localPosition;
-    _totalDragDistance = 0.0;
     _horizontalMovements.clear();
-    _consistentHorizontalCount = 0;
 
     debugPrint('PointerDown: 开始新的手势检测 ${event.localPosition}');
 
@@ -232,7 +226,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     final delta = event.localPosition - _dragStartPosition!;
     final horizontalDistance = delta.dx.abs();
     final verticalDistance = delta.dy.abs();
-    _totalDragDistance = sqrt(delta.dx * delta.dx + delta.dy * delta.dy);
 
     debugPrint(
         'PointerMove: delta=$delta, horizontal=$horizontalDistance, vertical=$verticalDistance');
@@ -395,18 +388,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       if (_horizontalMovements.length > 5) {
         _horizontalMovements.removeAt(0);
       }
-
-      // 检查方向一致性
-      if (_horizontalMovements.length >= 2) {
-        final lastMovement = _horizontalMovements.last;
-        final secondLastMovement =
-            _horizontalMovements[_horizontalMovements.length - 2];
-        if ((lastMovement > 0) == (secondLastMovement > 0)) {
-          _consistentHorizontalCount++;
-        } else {
-          _consistentHorizontalCount = 0;
-        }
-      }
     }
   }
 
@@ -494,43 +475,9 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     }
   }
 
-  /// 检查是否应该触发滑动开始
-  bool _shouldTriggerSwipe(double horizontalDistance, double verticalDistance) {
-    if (horizontalDistance < gestureConfig.moveThreshold) return false;
-
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < gestureConfig.horizontalToVerticalRatio) return false;
-
-    if (_consistentHorizontalCount <
-        gestureConfig.consistentDirectionSamples - 2) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /// 检查是否应该完成滑动操作
-  bool _shouldCompleteSwipe(
-      double horizontalDistance, double verticalDistance) {
-    // 必须达到滑动阈值
-    if (horizontalDistance < gestureConfig.swipeThreshold) return false;
-
-    // 水平移动必须明显大于垂直移动
-    final ratio = horizontalDistance / (verticalDistance + 1.0);
-    if (ratio < gestureConfig.horizontalToVerticalRatio) return false;
-
-    // 必须有足够的连续方向移动
-    if (_consistentHorizontalCount < gestureConfig.consistentDirectionSamples) {
-      return false;
-    }
-
-    return true;
-  }
-
   /// 重置手势状态
   void _resetGestureState() {
     _horizontalMovements.clear();
-    _consistentHorizontalCount = 0;
   }
 
   /// 处理拖拽结束
@@ -551,7 +498,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 重置所有手势状态
   void _resetAllGestureStates() {
     _dragStartPosition = null;
-    _totalDragDistance = 0.0;
 
     // 只清理当前组件相关的状态，避免影响其他组件
     if (_swipeManager.currentSwipingComponent == this) {
@@ -568,7 +514,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 重置手势检测状态（不影响滑动选中状态）
   void _resetGestureDetectionStates() {
     _dragStartPosition = null;
-    _totalDragDistance = 0.0;
     _cancelLongPressDetection();
     _resetGestureState();
     debugPrint('重置手势检测状态');
@@ -663,7 +608,6 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     _cancelLongPressDetection();
     _resetGestureState();
     _dragStartPosition = null;
-    _totalDragDistance = 0.0;
     markNeedsPaint();
   }
 

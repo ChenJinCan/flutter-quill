@@ -1,3 +1,5 @@
+// ignore_for_file: cascade_invocations
+
 import 'dart:async' show StreamSubscription;
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:math' as math;
@@ -919,6 +921,9 @@ class QuillRawEditorState extends EditorState
             _keyboardVisible = visible;
             if (visible) {
               _onChangeTextEditingValue(!_hasFocus);
+            } else {
+              // 键盘收起时，清除文本选中状态
+              _clearTextSelectionOnKeyboardHide();
             }
           });
 
@@ -942,65 +947,79 @@ class QuillRawEditorState extends EditorState
     final swipeManager = SwipeStateManager();
 
     // 设置编辑器引用
-    swipeManager.setEditorReferences(
-      controller: controller,
-      focusNode: widget.config.focusNode,
-      scrollController: _scrollController,
+    // swipeManager.setEditorReferences(
+    //   controller: controller,
+    //   focusNode: widget.config.focusNode,
+    //   scrollController: _scrollController,
+    // );
+
+    swipeManager.setDragCallbacks(
+      onDragStart: () {
+        debugPrint('拖拽开始回调被触发');
+        // 移除自动隐藏，让拖拽更新时再显示
+      },
+      onDragUpdate: (globalPosition, draggingComponent) {
+        debugPrint(
+            '拖拽更新回调被触发: $globalPosition, component=${draggingComponent.componentId}');
+
+        // 确保拖拽覆盖层总是显示
+        if (!DragSortOverlay.isVisible && mounted && context.mounted) {
+          debugPrint('显示拖拽覆盖层');
+          try {
+            DragSortOverlay.show(
+              context: context,
+              component: draggingComponent,
+              controller: controller,
+              editorKey: _editorKey,
+              initialGlobalPosition: globalPosition,
+              scrollController: _scrollController,
+            );
+            debugPrint('拖拽覆盖层显示成功: isVisible=${DragSortOverlay.isVisible}');
+          } catch (e) {
+            debugPrint('显示拖拽覆盖层失败: $e');
+          }
+        } else {
+          debugPrint(
+              '拖拽覆盖层状态: isVisible=${DragSortOverlay.isVisible}, mounted=$mounted, context.mounted=${context.mounted}');
+        }
+
+        // 无论如何都尝试更新位置
+        if (DragSortOverlay.isVisible) {
+          DragSortOverlay.updatePosition(globalPosition);
+        } else {
+          debugPrint('覆盖层不可见，跳过位置更新');
+        }
+      },
+      onDragEnd: (draggingComponent) {
+        // 完成拖拽排序的文档重排序操作
+        try {
+          DragSortOverlay.completeDragSort();
+        } catch (e) {
+          DragSortOverlay.hide();
+        }
+      },
+      onHideDragOverlay: DragSortOverlay.hideOnFocus,
     );
 
-    swipeManager
-      ..setDragCallbacks(
-        onDragStart: () {
-          debugPrint('拖拽开始回调被触发');
-          // 移除自动隐藏，让拖拽更新时再显示
-        },
-        onDragUpdate: (globalPosition, draggingComponent) {
-          debugPrint(
-              '拖拽更新回调被触发: $globalPosition, component=${draggingComponent.componentId}');
+    // swipeManager.setSwipeCallbacks(
+    //   onSwipeStart: widget.config.onSwipeStart,
+    //   onSwipeEnd: widget.config.onSwipeEnd,
+    //   onComponentSelected: widget.config.onComponentSelected,
+    //   onComponentUnselected: widget.config.onComponentUnselected,
+    // );
+  }
 
-          // 确保拖拽覆盖层总是显示
-          if (!DragSortOverlay.isVisible && mounted && context.mounted) {
-            debugPrint('显示拖拽覆盖层');
-            try {
-              DragSortOverlay.show(
-                context: context,
-                component: draggingComponent,
-                controller: controller,
-                editorKey: _editorKey,
-                initialGlobalPosition: globalPosition,
-                scrollController: _scrollController,
-              );
-              debugPrint('拖拽覆盖层显示成功: isVisible=${DragSortOverlay.isVisible}');
-            } catch (e) {
-              debugPrint('显示拖拽覆盖层失败: $e');
-            }
-          } else {
-            debugPrint(
-                '拖拽覆盖层状态: isVisible=${DragSortOverlay.isVisible}, mounted=$mounted, context.mounted=${context.mounted}');
-          }
-
-          // 无论如何都尝试更新位置
-          if (DragSortOverlay.isVisible) {
-            DragSortOverlay.updatePosition(globalPosition);
-          } else {
-            debugPrint('覆盖层不可见，跳过位置更新');
-          }
-        },
-        onDragEnd: (draggingComponent) {
-          // 完成拖拽排序的文档重排序操作
-          try {
-            DragSortOverlay.completeDragSort();
-          } catch (e) {
-            DragSortOverlay.hide();
-          }
-        },
-        onHideDragOverlay: DragSortOverlay.hideOnFocus,
-      )
-      ..setSwipeCallbacks(
-        onSwipeStart: widget.config.onSwipeStart,
-        onSwipeEnd: widget.config.onSwipeEnd,
-        onComponentSelected: widget.config.onComponentSelected,
+  /// 键盘收起时清除文本选中状态
+  void _clearTextSelectionOnKeyboardHide() {
+    // 如果当前有文本选中状态，将其折叠到选区末尾
+    if (!controller.selection.isCollapsed) {
+      debugPrint('键盘收起，清除文本选中状态');
+      controller.skipRequestKeyboard = true;
+      controller.updateSelection(
+        TextSelection.collapsed(offset: controller.selection.end),
+        ChangeSource.local,
       );
+    }
   }
 
   // KeyboardVisibilityController only checks for keyboards that

@@ -243,6 +243,7 @@ class QuillEditorState extends State<QuillEditor>
         onSwipeStart: config.onSwipeStart,
         onSwipeEnd: config.onSwipeEnd,
         onComponentSelected: config.onComponentSelected,
+        onComponentUnselected: config.onComponentUnSelected,
       )
 
       // 设置滑动管理器的编辑器引用

@@ -78,6 +78,7 @@ class QuillRawEditorConfig {
     this.onSwipeStart,
     this.onSwipeEnd,
     this.onComponentSelected,
+    this.onComponentUnselected,
   });
 
   /// Controls whether this editor has keyboard focus.
@@ -429,4 +430,7 @@ class QuillRawEditorConfig {
   /// 组件选中回调
   final void Function(Line? line, Block? block, SwipeDirection direction,
       int documentOffset, int documentLength)? onComponentSelected;
+
+  /// 组件取消选中回调
+  final void Function(Line? line, Block? block)? onComponentUnselected;
 }
