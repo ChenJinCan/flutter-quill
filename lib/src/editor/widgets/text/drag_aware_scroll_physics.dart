@@ -14,8 +14,6 @@ class DragAwareScrollPhysics extends ScrollPhysics {
     this.swipeManager,
   });
 
-  final SwipeStateManager? swipeManager;
-
   /// 创建一个使用全局SwipeStateManager实例的DragAwareScrollPhysics
   factory DragAwareScrollPhysics.global({ScrollPhysics? parent}) {
     return DragAwareScrollPhysics(
@@ -23,6 +21,8 @@ class DragAwareScrollPhysics extends ScrollPhysics {
       swipeManager: SwipeStateManager(),
     );
   }
+
+  final SwipeStateManager? swipeManager;
 
   @override
   DragAwareScrollPhysics applyTo(ScrollPhysics? ancestor) {

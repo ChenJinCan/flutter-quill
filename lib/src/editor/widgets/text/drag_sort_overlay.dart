@@ -91,7 +91,7 @@ class DragSortOverlay {
 
     _debugPrint('DragSortOverlay.show: 正在插入覆盖层到Overlay');
     Overlay.of(context).insert(_overlayEntry!);
-    _debugPrint('DragSortOverlay.show: 覆盖层已插入，isVisible=${isVisible}');
+    _debugPrint('DragSortOverlay.show: 覆盖层已插入，isVisible=$isVisible');
   }
 
   static bool get isVisible => _overlayEntry != null;

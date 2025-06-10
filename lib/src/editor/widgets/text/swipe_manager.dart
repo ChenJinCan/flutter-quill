@@ -93,7 +93,6 @@ class SwipeStateManager {
   void _onFocusChanged() {
     // 当编辑器获得焦点时，立即清除所有滑动和拖拽状态
     if (_focusNode?.hasFocus == true) {
-      // debugPrint('SwipeStateManager._onFocusChanged: 编辑器获得焦点，清除所有滑动和拖拽状态');
       _clearAllStatesOnFocus();
     }
   }
@@ -101,35 +100,26 @@ class SwipeStateManager {
   /// 在焦点聚焦时清除所有状态的私有方法
   void _clearAllStatesOnFocus() {
     // 清除当前滑动状态
-    if (_currentSwipingComponent != null) {
-      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 重置滑动状态');
-      _currentSwipingComponent!.resetSwipe();
-      _currentSwipingComponent = null;
-    }
+    _currentSwipingComponent?.resetSwipe();
+    _currentSwipingComponent = null;
 
     // 清除当前拖拽状态
-    if (_currentDraggingComponent != null) {
-      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 结束拖拽状态');
-      _currentDraggingComponent!.endDrag();
-      _currentDraggingComponent = null;
-    }
+    _currentDraggingComponent?.endDrag();
+    _currentDraggingComponent = null;
 
     // 清除选中状态
     if (_selectedComponent != null) {
-      // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 清除选中状态');
       final component = _selectedComponent!;
       component.setSelected(false);
 
       // 触发组件取消选中回调
       _onComponentUnselected?.call(component.lineNode, component.block);
-
       _selectedComponent = null;
     }
 
     // 隐藏拖拽覆盖层（如果存在）
     // 注意：这里使用动态导入避免循环依赖
     try {
-      // 导入drag_sort_overlay.dart并调用hideOnFocus
       _hideDragOverlayOnFocus();
     } catch (e) {
       // debugPrint('SwipeStateManager._clearAllStatesOnFocus: 隐藏拖拽覆盖层失败: $e');
@@ -147,11 +137,8 @@ class SwipeStateManager {
     debugPrint('SwipeStateManager: 检测到滚动，清除所有组件状态');
 
     // 如果有组件在滑动状态，重置它们
-    if (_currentSwipingComponent != null) {
-      debugPrint('SwipeStateManager: 重置当前滑动组件');
-      _currentSwipingComponent!.resetSwipe();
-      _currentSwipingComponent = null;
-    }
+    _currentSwipingComponent?.resetSwipe();
+    _currentSwipingComponent = null;
 
     // 清除选中状态（如果存在）
     if (_selectedComponent != null) {
@@ -161,7 +148,6 @@ class SwipeStateManager {
 
       // 触发组件取消选中回调
       _onComponentUnselected?.call(component.lineNode, component.block);
-
       _selectedComponent = null;
     }
 
@@ -188,8 +174,6 @@ class SwipeStateManager {
   bool shouldPreventOtherGestures() {
     final hasActiveSwipe = safeCurrentSwipingComponent != null;
     final hasActiveDrag = safeCurrentDraggingComponent != null;
-    debugPrint(
-        'SwipeStateManager.shouldPreventOtherGestures: hasActiveSwipe=$hasActiveSwipe, hasActiveDrag=$hasActiveDrag');
     return hasActiveSwipe || hasActiveDrag;
   }
 
@@ -247,7 +231,6 @@ class SwipeStateManager {
 
     // 如果光标在当前TextLine范围内，禁止拖拽
     if (cursorOffset >= lineStartOffset && cursorOffset < lineEndOffset) {
-      // debugPrint('SwipeStateManager.shouldAllowDrag: 光标在当前TextLine，禁止拖拽');
       return false;
     }
 
@@ -258,7 +241,6 @@ class SwipeStateManager {
   bool startDrag(SwipeableComponent component) {
     // 检查是否应该允许拖拽
     if (!shouldAllowDrag(component)) {
-      // debugPrint('SwipeStateManager.startDrag: 当前组件不允许拖拽');
       return false;
     }
 
@@ -283,24 +265,18 @@ class SwipeStateManager {
 
     // 开始拖拽时取消编辑器焦点
     if (_focusNode?.hasFocus == true) {
-      // debugPrint('SwipeStateManager.startDrag: 取消编辑器焦点');
       _focusNode!.unfocus();
     }
 
     _currentDraggingComponent = component;
-    debugPrint('SwipeStateManager.startDrag: 开始拖拽 ${component.componentId}');
     _onDragStart?.call();
-    debugPrint('SwipeStateManager.startDrag: 拖拽开始回调已调用');
     return true;
   }
 
   /// 更新拖拽位置
   void updateDrag(Offset globalPosition) {
     if (_currentDraggingComponent != null) {
-      debugPrint('SwipeStateManager.updateDrag: 更新拖拽位置 $globalPosition');
       _onDragUpdate?.call(globalPosition, _currentDraggingComponent!);
-    } else {
-      debugPrint('SwipeStateManager.updateDrag: 没有正在拖拽的组件');
     }
   }
 
@@ -328,10 +304,10 @@ class SwipeStateManager {
   /// 开始滑动
   /// 如果已有其他组件在滑动，会先重置它们
   bool startSwipe(
-      SwipeableComponent component, SwipeDirection direction, double offset) {
-    debugPrint(
-        'SwipeStateManager.startSwipe: 尝试开始滑动 ${component.componentId}, direction=$direction, offset=$offset');
-
+    SwipeableComponent component,
+    SwipeDirection direction,
+    double offset,
+  ) {
     // 首先清理所有无效的组件引用
     safeCurrentSwipingComponent; // 触发清理检查
     safeCurrentDraggingComponent; // 触发清理检查
@@ -398,16 +374,12 @@ class SwipeStateManager {
     }
 
     // 清除当前滑动状态
-    if (_currentSwipingComponent != null) {
-      _currentSwipingComponent!.resetSwipe();
-      _currentSwipingComponent = null;
-    }
+    _currentSwipingComponent?.resetSwipe();
+    _currentSwipingComponent = null;
 
     // 清除当前拖拽状态
-    if (_currentDraggingComponent != null) {
-      _currentDraggingComponent!.endDrag();
-      _currentDraggingComponent = null;
-    }
+    _currentDraggingComponent?.endDrag();
+    _currentDraggingComponent = null;
 
     // 设置新的选中组件
     _selectedComponent = component;
@@ -426,7 +398,6 @@ class SwipeStateManager {
 
       // 触发组件取消选中回调
       _onComponentUnselected?.call(component.lineNode, component.block);
-
       _selectedComponent = null;
     }
   }
@@ -441,20 +412,12 @@ class SwipeStateManager {
   /// 重置所有滑动状态
   void resetAll() {
     debugPrint('SwipeStateManager.resetAll: 重置所有状态');
-    if (_currentSwipingComponent != null) {
-      debugPrint(
-          'SwipeStateManager.resetAll: 重置滑动组件=${_currentSwipingComponent!.componentId}');
-      _currentSwipingComponent!.resetSwipe();
-      _currentSwipingComponent = null;
-    }
-    if (_currentDraggingComponent != null) {
-      debugPrint(
-          'SwipeStateManager.resetAll: 重置拖拽组件=${_currentDraggingComponent!.componentId}');
-      _currentDraggingComponent!.endDrag();
-      _currentDraggingComponent = null;
-    }
+    _currentSwipingComponent?.resetSwipe();
+    _currentSwipingComponent = null;
+
+    _currentDraggingComponent?.endDrag();
+    _currentDraggingComponent = null;
     clearSelection();
-    debugPrint('SwipeStateManager.resetAll: 重置完成');
   }
 
   /// 获取当前正在滑动的组件（安全访问）
