@@ -663,16 +663,96 @@ class _QuillEditorSelectionGestureDetectorBuilder
     }
 
     if (delegate.selectionEnabled) {
-      if (Theme.of(_state.context).isCupertino) {
-        renderEditor!.selectPositionAt(
-          from: details.globalPosition,
-          cause: SelectionChangedCause.longPress,
-        );
+      if (isAppleOS) {
+        _handleLongPressSelection(details.globalPosition);
       } else {
-        renderEditor!.selectWord(SelectionChangedCause.longPress);
+        _handleLongPressSelection(details.globalPosition);
         Feedback.forLongPress(_state.context);
       }
     }
+  }
+
+  /// Handles long press selection with smart word selection fallback
+  void _handleLongPressSelection(Offset globalPosition) {
+    // First try to select word at the current position
+    final position = renderEditor!.getPositionForOffset(globalPosition);
+    final wordSelection = renderEditor!.selectWordAtPosition(position);
+
+    // Check if we got a valid word selection
+    final selectedText =
+        wordSelection.textInside(_state.controller.document.toPlainText());
+    final hasValidSelection = !wordSelection.isCollapsed &&
+        selectedText.trim().isNotEmpty &&
+        selectedText.trim() != '\n';
+
+    if (hasValidSelection) {
+      // We found a valid word at the current position
+      renderEditor!._handleSelectionChange(
+          wordSelection, SelectionChangedCause.longPress);
+    } else {
+      // No valid word at current position, try to find nearby word
+      _selectNearbyWordOnLongPress(globalPosition);
+    }
+  }
+
+  /// Attempts to select a word near the given position when long press
+  /// didn't select any meaningful text
+  void _selectNearbyWordOnLongPress(Offset globalPosition) {
+    final position = renderEditor!.getPositionForOffset(globalPosition);
+    final documentText = _state.controller.document.toPlainText();
+
+    // Search for words in both directions from the current position
+    final searchRadius = 20; // Search within 20 characters
+
+    for (int radius = 1; radius <= searchRadius; radius++) {
+      // Try positions before the current position
+      final beforeOffset =
+          (position.offset - radius).clamp(0, documentText.length);
+      if (beforeOffset != position.offset) {
+        final beforePosition = TextPosition(offset: beforeOffset);
+        final beforeWord = renderEditor!.selectWordAtPosition(beforePosition);
+        final beforeText = beforeWord.textInside(documentText);
+
+        if (!beforeWord.isCollapsed &&
+            beforeText.trim().isNotEmpty &&
+            beforeText.trim() != '\n' &&
+            _isValidWord(beforeText)) {
+          renderEditor!._handleSelectionChange(
+              beforeWord, SelectionChangedCause.longPress);
+          return;
+        }
+      }
+
+      // Try positions after the current position
+      final afterOffset =
+          (position.offset + radius).clamp(0, documentText.length);
+      if (afterOffset != position.offset) {
+        final afterPosition = TextPosition(offset: afterOffset);
+        final afterWord = renderEditor!.selectWordAtPosition(afterPosition);
+        final afterText = afterWord.textInside(documentText);
+
+        if (!afterWord.isCollapsed &&
+            afterText.trim().isNotEmpty &&
+            afterText.trim() != '\n' &&
+            _isValidWord(afterText)) {
+          renderEditor!._handleSelectionChange(
+              afterWord, SelectionChangedCause.longPress);
+          return;
+        }
+      }
+    }
+
+    // If no nearby word found, just place cursor at the current position
+    renderEditor!.selectPositionAt(
+      from: globalPosition,
+      cause: SelectionChangedCause.longPress,
+    );
+  }
+
+  /// Checks if the given text represents a valid word (contains letters or numbers)
+  bool _isValidWord(String text) {
+    // Check if text contains at least one alphanumeric character
+    return RegExp(r'[a-zA-Z0-9\u4e00-\u9fa5]').hasMatch(text);
   }
 
   @override

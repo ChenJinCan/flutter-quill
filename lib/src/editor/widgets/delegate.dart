@@ -288,18 +288,101 @@ class EditorTextSelectionGestureDetectorBuilder {
   void onDoubleTapDown(TapDownDetails details) {
     if (delegate.selectionEnabled) {
       renderEditor!.selectWord(SelectionChangedCause.tap);
-      // allow the selection to get updated before trying to bring up
-      // toolbars.
-      //
-      // if double tap happens on an editor that doesn't
-      // have focus, selection hasn't been set when the toolbars
-      // get added
+
+      // Check if we actually selected any text
       SchedulerBinding.instance.addPostFrameCallback((_) {
+        final selection = renderEditor?.selection;
+        final hasValidSelection = selection != null &&
+            !selection.isCollapsed &&
+            selection.isValid &&
+            editor!.textEditingValue.selection
+                .textInside(editor!.textEditingValue.text)
+                .trim()
+                .isNotEmpty;
+
+        if (!hasValidSelection) {
+          // If no valid text was selected, try to find and select a nearby word
+          _selectNearbyWord(details.globalPosition);
+        }
+
         if (checkSelectionToolbarShouldShow(isAdditionalAction: false)) {
           editor!.showToolbar();
         }
       });
     }
+  }
+
+  /// Attempts to select a word near the given position when the initial
+  /// double-tap didn't select any meaningful text
+  void _selectNearbyWord(Offset globalPosition) {
+    final position = renderEditor!.getPositionForOffset(globalPosition);
+    final text = editor!.textEditingValue.text;
+
+    if (text.isEmpty) return;
+
+    // Search for the nearest word character within a reasonable range
+    const maxSearchDistance =
+        10; // Maximum characters to search in each direction
+
+    // First, try searching to the right
+    for (int i = 1;
+        i <= maxSearchDistance && position.offset + i < text.length;
+        i++) {
+      final newOffset = position.offset + i;
+      final char = text[newOffset];
+      if (_isWordCharacter(char)) {
+        final newPosition = TextPosition(offset: newOffset);
+        final wordBoundary = renderEditor!.getWordBoundary(newPosition);
+        if (wordBoundary.isValid && !wordBoundary.isCollapsed) {
+          final wordText = text.substring(wordBoundary.start, wordBoundary.end);
+          if (wordText.trim().isNotEmpty) {
+            renderEditor!.onSelectionChanged(
+              TextSelection(
+                  baseOffset: wordBoundary.start,
+                  extentOffset: wordBoundary.end),
+              SelectionChangedCause.tap,
+            );
+            return;
+          }
+        }
+      }
+    }
+
+    // If no word found to the right, try searching to the left
+    for (int i = 1; i <= maxSearchDistance && position.offset - i >= 0; i++) {
+      final newOffset = position.offset - i;
+      final char = text[newOffset];
+      if (_isWordCharacter(char)) {
+        final newPosition = TextPosition(offset: newOffset);
+        final wordBoundary = renderEditor!.getWordBoundary(newPosition);
+        if (wordBoundary.isValid && !wordBoundary.isCollapsed) {
+          final wordText = text.substring(wordBoundary.start, wordBoundary.end);
+          if (wordText.trim().isNotEmpty) {
+            renderEditor!.onSelectionChanged(
+              TextSelection(
+                  baseOffset: wordBoundary.start,
+                  extentOffset: wordBoundary.end),
+              SelectionChangedCause.tap,
+            );
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /// Checks if a character is part of a word (letter, digit, or underscore)
+  bool _isWordCharacter(String char) {
+    if (char.isEmpty) return false;
+    final codeUnit = char.codeUnitAt(0);
+    return (codeUnit >= 65 && codeUnit <= 90) || // A-Z
+        (codeUnit >= 97 && codeUnit <= 122) || // a-z
+        (codeUnit >= 48 && codeUnit <= 57) || // 0-9
+        codeUnit == 95 || // _
+        codeUnit >= 0x4e00 && codeUnit <= 0x9fff || // Chinese characters
+        codeUnit >= 0x3040 && codeUnit <= 0x309f || // Hiragana
+        codeUnit >= 0x30a0 && codeUnit <= 0x30ff || // Katakana
+        codeUnit >= 0xac00 && codeUnit <= 0xd7af; // Korean
   }
 
   /// Handler for [EditorTextSelectionGestureDetector.onDragSelectionStart].

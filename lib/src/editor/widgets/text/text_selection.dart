@@ -11,6 +11,29 @@ import '../../../document/nodes/node.dart';
 import '../../editor.dart';
 import 'magnifier.dart';
 
+/// 组合两个可见性ValueListenable，当任一为true时返回true
+class _CombinedVisibility extends ValueNotifier<bool> {
+  _CombinedVisibility(this._first, this._second)
+      : super(_first.value || _second.value) {
+    _first.addListener(_updateValue);
+    _second.addListener(_updateValue);
+  }
+
+  final ValueListenable<bool> _first;
+  final ValueListenable<bool> _second;
+
+  void _updateValue() {
+    value = _first.value || _second.value;
+  }
+
+  @override
+  void dispose() {
+    _first.removeListener(_updateValue);
+    _second.removeListener(_updateValue);
+    super.dispose();
+  }
+}
+
 TextSelection localSelection(Node node, TextSelection selection, fromParent) {
   final base = fromParent ? node.offset : node.documentOffset;
   assert(base <= selection.end && selection.start <= base + node.length - 1);
@@ -418,11 +441,21 @@ class _TextSelectionHandleOverlay extends StatefulWidget {
       _TextSelectionHandleOverlayState();
 
   ValueListenable<bool> get _visibility {
+    // 简化逻辑：让handles在选择的任一端可见时就显示
+    // 这样可以确保交叉选择时handles不会消失
     switch (position) {
       case _TextSelectionHandlePosition.start:
-        return renderObject.selectionStartInViewport;
+        // start handle在选择起始或结束位置任一可见时就显示
+        return _CombinedVisibility(
+          renderObject.selectionStartInViewport,
+          renderObject.selectionEndInViewport,
+        );
       case _TextSelectionHandlePosition.end:
-        return renderObject.selectionEndInViewport;
+        // end handle在选择起始或结束位置任一可见时就显示
+        return _CombinedVisibility(
+          renderObject.selectionStartInViewport,
+          renderObject.selectionEndInViewport,
+        );
     }
   }
 }
@@ -467,15 +500,22 @@ class _TextSelectionHandleOverlayState
   @override
   void dispose() {
     widget._visibility.removeListener(_handleVisibilityChanged);
+    if (widget._visibility is _CombinedVisibility) {
+      (widget._visibility as _CombinedVisibility).dispose();
+    }
     _controller.dispose();
     super.dispose();
   }
 
   void _handleDragStart(DragStartDetails details) {
     widget.dragOffsetNotifier?.value = details.globalPosition;
-    final textPosition = widget.position == _TextSelectionHandlePosition.start
-        ? widget.selection.base
-        : widget.selection.extent;
+    // 计算handle的位置：start handle在base位置，end handle在extent位置
+    final TextPosition textPosition;
+    if (widget.position == _TextSelectionHandlePosition.start) {
+      textPosition = widget.selection.base;
+    } else {
+      textPosition = widget.selection.extent;
+    }
     final lineHeight = widget.renderObject.preferredLineHeight(textPosition);
     final handleSize = widget.selectionControls.getHandleSize(lineHeight);
     _dragPosition = details.globalPosition + Offset(0, -handleSize.height);
@@ -496,30 +536,40 @@ class _TextSelectionHandleOverlayState
       return;
     }
 
-    final isNormalized =
-        widget.selection.extentOffset >= widget.selection.baseOffset;
+    // 固定身份的逻辑：每个handle始终控制固定的逻辑端点
+    // start handle始终控制base，end handle始终控制extent
+    // 这样交叉后handles不会跟着走，符合iOS原生行为
     TextSelection newSelection;
     switch (widget.position) {
       case _TextSelectionHandlePosition.start:
-        newSelection = TextSelection(
-          baseOffset:
-              isNormalized ? position.offset : widget.selection.baseOffset,
-          extentOffset:
-              isNormalized ? widget.selection.extentOffset : position.offset,
+        // start handle始终控制base位置
+        newSelection = widget.selection.copyWith(
+          baseOffset: position.offset,
         );
         break;
       case _TextSelectionHandlePosition.end:
-        newSelection = TextSelection(
-          baseOffset:
-              isNormalized ? widget.selection.baseOffset : position.offset,
-          extentOffset:
-              isNormalized ? position.offset : widget.selection.extentOffset,
+        // end handle始终控制extent位置
+        newSelection = widget.selection.copyWith(
+          extentOffset: position.offset,
         );
         break;
     }
 
-    if (newSelection.baseOffset >= newSelection.extentOffset) {
-      return; // don't allow order swapping.
+    // 防止在拖拽过程中创建collapsed selection，但允许短暂的重叠
+    // 这样可以避免手柄在交叉时突然消失
+    if (newSelection.isCollapsed) {
+      // 如果选择变为collapsed，我们仍然允许更新，
+      // 但会在下一帧中调整为合理的选择
+      final minimalSelection = TextSelection(
+        baseOffset: newSelection.baseOffset,
+        extentOffset: newSelection.baseOffset + 1,
+      );
+      // 确保不超出文档范围
+      final documentLength = widget.renderObject.document.length;
+      if (minimalSelection.extentOffset <= documentLength) {
+        widget.onSelectionHandleChanged(minimalSelection);
+      }
+      return;
     }
 
     widget.onSelectionHandleChanged(newSelection);
@@ -561,9 +611,13 @@ class _TextSelectionHandleOverlayState
     // May have to use getSelectionBoxes instead of preferredLineHeight.
     // or expose TextStyle on the render object and calculate
     // preferredLineHeight / style.height
-    final textPosition = widget.position == _TextSelectionHandlePosition.start
-        ? widget.selection.base
-        : widget.selection.extent;
+    // 计算handle的实际位置（基于逻辑位置）
+    final TextPosition textPosition;
+    if (widget.position == _TextSelectionHandlePosition.start) {
+      textPosition = widget.selection.base;
+    } else {
+      textPosition = widget.selection.extent;
+    }
     final lineHeight = widget.renderObject.preferredLineHeight(textPosition);
     final handleAnchor =
         widget.selectionControls.getHandleAnchor(type!, lineHeight);
@@ -576,11 +630,20 @@ class _TextSelectionHandleOverlayState
       handleSize.height,
     );
 
-    // Make sure the GestureDetector is big enough to be easily interactive.
+    // 大幅增大手柄的交互区域，提高响应性
+    // 将最小触摸半径从 kMinInteractiveDimension / 2 增加到 30.0
+    // 同时确保交互区域至少是原始手柄大小的 2.5 倍
+    const enhancedTouchRadius = 30.0;
+    final minEnhancedSize = math.max(handleSize.width, handleSize.height) * 2.5;
+    final effectiveRadius = math.max(enhancedTouchRadius, minEnhancedSize / 2);
+
     final interactiveRect = handleRect.expandToInclude(
       Rect.fromCircle(
-          center: handleRect.center, radius: kMinInteractiveDimension / 2),
+        center: handleRect.center,
+        radius: effectiveRadius,
+      ),
     );
+
     final padding = RelativeRect.fromLTRB(
       math.max((interactiveRect.width - handleRect.width) / 2, 0),
       math.max((interactiveRect.height - handleRect.height) / 2, 0),
@@ -599,7 +662,7 @@ class _TextSelectionHandleOverlayState
           width: interactiveRect.width,
           height: interactiveRect.height,
           child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
+            behavior: HitTestBehavior.opaque,
             dragStartBehavior: widget.dragStartBehavior,
             onPanStart: _handleDragStart,
             onPanUpdate: _handleDragUpdate,
