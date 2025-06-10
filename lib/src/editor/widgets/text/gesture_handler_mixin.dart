@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 
 import 'swipe_manager.dart';
@@ -74,6 +76,11 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   // 选中状态
   bool _isSelected = false;
 
+  // 双击检测相关
+  Timer? _doubleTapTimer;
+  Offset? _lastTapPosition;
+  bool _isInDoubleTapWindow = false;
+
   // 回调函数
   VoidCallback? _onSwipeLeft;
   VoidCallback? _onSwipeRight;
@@ -144,6 +151,41 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
         _swipeManager.scrollController!.position.isScrollingNotifier.value;
   }
 
+  /// 处理双击检测
+  bool _handleDoubleTapDetection(Offset globalPosition) {
+    if (_doubleTapTimer != null && _lastTapPosition != null) {
+      // 检查是否在双击容忍范围内
+      final distance = (globalPosition - _lastTapPosition!).distance;
+      if (distance <= kDoubleTapSlop) {
+        // 检测到双击
+        debugPrint('检测到双击，禁用长按拖拽手势');
+        _isInDoubleTapWindow = true;
+        _cancelDoubleTapTimer();
+        _cancelLongPressDetection();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 开始双击检测窗口
+  void _startDoubleTapDetection(Offset globalPosition) {
+    _lastTapPosition = globalPosition;
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = Timer(kDoubleTapTimeout, () {
+      _lastTapPosition = null;
+      _doubleTapTimer = null;
+      _isInDoubleTapWindow = false;
+    });
+  }
+
+  /// 取消双击检测
+  void _cancelDoubleTapTimer() {
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = null;
+    _lastTapPosition = null;
+  }
+
   /// 处理指针事件的通用逻辑
   ///
   /// 新的简化策略：
@@ -202,6 +244,17 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   /// 处理按下事件
   void _handlePointerDown(PointerDownEvent event) {
+    // 检测双击
+    final isDoubleTap = _handleDoubleTapDetection(event.position);
+    if (isDoubleTap) {
+      // 双击场景下不启动任何自定义手势
+      debugPrint('双击检测成功，跳过自定义手势启动');
+      return;
+    }
+
+    // 开始新的双击检测窗口
+    _startDoubleTapDetection(event.position);
+
     // 重置当前组件的状态
     _dragStartPosition = event.localPosition;
     _horizontalMovements.clear();
@@ -214,8 +267,10 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 启动长按检测（用于拖拽）
-    if (gestureConfig.enableLongPress && gestureConfig.enableDrag) {
+    // 启动长按检测（用于拖拽）- 但要避免双击冲突
+    if (gestureConfig.enableLongPress &&
+        gestureConfig.enableDrag &&
+        !_isInDoubleTapWindow) {
       _startLongPressDetection(event.localPosition);
       debugPrint('开始长按检测: ${event.localPosition}');
     }
@@ -229,6 +284,13 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
     debugPrint(
         'PointerMove: delta=$delta, horizontal=$horizontalDistance, vertical=$verticalDistance');
+
+    // 如果在双击窗口内有移动，取消长按检测（避免误触发拖拽）
+    if (_isInDoubleTapWindow && horizontalDistance > 5.0) {
+      _cancelLongPressDetection();
+      debugPrint('双击窗口内检测到移动，取消长按检测');
+      return;
+    }
 
     // 如果正在滚动，取消长按检测（但不中断已经开始的拖拽）
     if (_isScrolling && !_isDragging && !_isLongPressing) {
@@ -264,11 +326,12 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 简化的滑动检测：只检查基本条件
+    // 简化的滑动检测：只检查基本条件，并且要避免双击冲突
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
         !_isScrolling &&
+        !_isInDoubleTapWindow &&
         horizontalDistance > gestureConfig.moveThreshold &&
         verticalDistance < horizontalDistance &&
         !(_isSwipingLeft || _isSwipingRight)) {
@@ -322,11 +385,19 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 处理抬起事件
   void _handlePointerUp(PointerUpEvent event) {
     debugPrint(
-        '抬起事件: isDragging=$_isDragging, isLongPressing=$_isLongPressing, isSwipingLeft=$_isSwipingLeft, isSwipingRight=$_isSwipingRight');
+        '抬起事件: isDragging=$_isDragging, isLongPressing=$_isLongPressing, isSwipingLeft=$_isSwipingLeft, isSwipingRight=$_isSwipingRight, isInDoubleTapWindow=$_isInDoubleTapWindow');
 
     // 如果正在拖拽，结束拖拽
     if (_isDragging) {
       _handleDragEnd();
+      return;
+    }
+
+    // 如果在双击窗口内，清除双击状态但不执行其他手势
+    if (_isInDoubleTapWindow) {
+      debugPrint('双击窗口内抬起，清除双击状态');
+      _isInDoubleTapWindow = false;
+      _resetGestureDetectionStates();
       return;
     }
 
@@ -395,9 +466,14 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   void _startLongPressDetection(Offset position) {
     _longPressTimer?.cancel();
     _longPressTimer = Timer(gestureConfig.longPressDuration, () {
-      // 在长按定时器触发时再次检查是否有滚动发生
+      // 在长按定时器触发时再次检查是否有滚动发生或者是双击场景
       if (_isScrolling) {
         debugPrint('长按定时器触发时检测到滚动，取消长按拖拽');
+        return;
+      }
+
+      if (_isInDoubleTapWindow) {
+        debugPrint('长按定时器触发时检测到双击窗口，取消长按拖拽');
         return;
       }
 
@@ -606,6 +682,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     _isDragging = false;
     _isLongPressing = false;
     _cancelLongPressDetection();
+    _cancelDoubleTapTimer();
+    _isInDoubleTapWindow = false;
     _resetGestureState();
     _dragStartPosition = null;
     markNeedsPaint();
