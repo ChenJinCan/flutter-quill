@@ -508,8 +508,7 @@ class _TextSelectionHandleOverlayState
   }
 
   void _handleDragStart(DragStartDetails details) {
-    widget.dragOffsetNotifier?.value = details.globalPosition;
-    // 计算handle的位置：start handle在base位置，end handle在extent位置
+    // 计算文本位置和手柄信息
     final TextPosition textPosition;
     if (widget.position == _TextSelectionHandlePosition.start) {
       textPosition = widget.selection.base;
@@ -518,6 +517,21 @@ class _TextSelectionHandleOverlayState
     }
     final lineHeight = widget.renderObject.preferredLineHeight(textPosition);
     final handleSize = widget.selectionControls.getHandleSize(lineHeight);
+
+    // 获取文本光标位置的全局坐标
+    final caretRect = widget.renderObject.getLocalRectForCaret(textPosition);
+    final renderBoxGlobalPosition =
+        widget.renderObject.localToGlobal(Offset.zero);
+    final caretGlobalPosition =
+        renderBoxGlobalPosition + caretRect.bottomCenter;
+
+    // 组合位置：水平使用拖拽位置，垂直使用光标位置
+    final combinedPosition = Offset(
+      details.globalPosition.dx, // 水平位置使用拖拽位置
+      caretGlobalPosition.dy, // 垂直位置使用光标位置
+    );
+
+    widget.dragOffsetNotifier?.value = combinedPosition;
     _dragPosition = details.globalPosition + Offset(0, -handleSize.height);
   }
 
@@ -527,10 +541,25 @@ class _TextSelectionHandleOverlayState
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
-    widget.dragOffsetNotifier?.value = details.globalPosition;
     _dragPosition += details.delta;
     final position =
         widget.renderObject.getPositionForOffset(details.globalPosition);
+
+    // 获取当前文本位置的光标位置
+    final caretRect = widget.renderObject.getLocalRectForCaret(position);
+    final renderBoxGlobalPosition =
+        widget.renderObject.localToGlobal(Offset.zero);
+    final caretGlobalPosition =
+        renderBoxGlobalPosition + caretRect.bottomCenter;
+
+    // 组合位置：水平使用拖拽位置，垂直使用光标位置
+    final combinedPosition = Offset(
+      details.globalPosition.dx, // 水平位置使用拖拽位置
+      caretGlobalPosition.dy, // 垂直位置使用光标位置
+    );
+
+    widget.dragOffsetNotifier?.value = combinedPosition;
+
     if (widget.selection.isCollapsed) {
       widget.onSelectionHandleChanged(TextSelection.fromPosition(position));
       return;
