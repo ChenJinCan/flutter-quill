@@ -1,9 +1,27 @@
+// ignore_for_file: cascade_invocations
+
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 
 import 'swipe_manager.dart';
+
+/// 手势状态重置修复说明:
+///
+/// 问题: TextLine左侧滑动有时会导致界面完全不响应
+/// 原因: 滑动状态没有正确重置，导致手势检测器处于异常状态
+///
+/// 修复方案:
+/// 1. 强化状态重置逻辑，确保所有状态变量都被正确重置
+/// 2. 添加紧急状态重置方法，用于处理异常情况
+/// 3. 在指针取消事件中使用更强的重置逻辑
+/// 4. 添加异常处理，防止SwipeStateManager错误影响本地状态重置
+/// 5. 提供公共方法供外部强制重置状态
+///
+/// 使用方法:
+/// - 如果界面不响应，可以调用 forceResetGestureStates() 强制重置
+/// - 可以通过 hasActiveGestureState 检查是否有活跃的手势状态
 
 /// 手势处理配置类
 class GestureConfig {
@@ -419,12 +437,16 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
         // 触发滑动回调
         if (!hasFocus) {
-          if (direction == SwipeDirection.left) {
-            _onSwipeLeft?.call();
-            debugPrint('触发左滑回调');
-          } else {
-            _onSwipeRight?.call();
-            debugPrint('触发右滑回调');
+          try {
+            if (direction == SwipeDirection.left) {
+              _onSwipeLeft?.call();
+              debugPrint('触发左滑回调');
+            } else {
+              _onSwipeRight?.call();
+              debugPrint('触发右滑回调');
+            }
+          } catch (e) {
+            debugPrint('滑动回调执行失败: $e');
           }
         }
 
@@ -433,19 +455,24 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
         debugPrint('设置组件为选中状态');
 
         // 调用SwipeStateManager的选中回调
-        _swipeManager.selectComponent(this, direction);
-        debugPrint('触发ComponentSelect回调');
+        try {
+          _swipeManager.selectComponent(this, direction);
+          debugPrint('触发ComponentSelect回调');
+        } catch (e) {
+          debugPrint('ComponentSelect回调执行失败: $e');
+        }
       } else {
         debugPrint(
             '滑动距离不足，取消滑动 (需要距离>=${gestureConfig.swipeThreshold}, 当前:$horizontalDistance)');
       }
 
-      // 重置滑动状态
+      // 强制重置滑动状态，确保界面能响应
+      debugPrint('强制重置滑动状态');
       _isSwipingLeft = false;
       _isSwipingRight = false;
       _swipeOffset = 0.0;
       markNeedsPaint();
-      debugPrint('重置滑动视觉偏移');
+      debugPrint('滑动状态重置完成');
     }
 
     // 重置手势检测状态
@@ -567,32 +594,97 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   /// 处理指针取消事件
   void _handlePointerCancel() {
-    debugPrint('指针取消事件');
-    _resetAllGestureStates();
+    debugPrint('指针取消事件: 执行紧急状态重置');
+    _emergencyStateReset();
+  }
+
+  /// 紧急状态重置 - 用于处理异常情况
+  void _emergencyStateReset() {
+    debugPrint('_emergencyStateReset: 执行紧急状态重置');
+
+    // 立即停止所有定时器
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = null;
+
+    // 强制重置所有状态变量
+    _dragStartPosition = null;
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    _isDragging = false;
+    _isLongPressing = false;
+    _isInDoubleTapWindow = false;
+    _lastTapPosition = null;
+
+    // 清空移动记录
+    _horizontalMovements.clear();
+
+    // 强制重绘
+    markNeedsPaint();
+
+    // 尝试清理SwipeStateManager状态（忽略错误）
+    try {
+      _swipeManager.resetAll();
+    } catch (e) {
+      debugPrint('_emergencyStateReset: SwipeStateManager重置失败，忽略: $e');
+    }
+
+    debugPrint('_emergencyStateReset: 紧急重置完成');
   }
 
   /// 重置所有手势状态
   void _resetAllGestureStates() {
+    debugPrint('_resetAllGestureStates: 开始重置所有状态');
+
+    // 强制重置本地状态，不依赖外部状态检查
+    final wasSwipingLeft = _isSwipingLeft;
+    final wasSwipingRight = _isSwipingRight;
+    final wasDragging = _isDragging;
+    final wasLongPressing = _isLongPressing;
+
+    // 立即清除所有本地状态
     _dragStartPosition = null;
+    _isSwipingLeft = false;
+    _isSwipingRight = false;
+    _swipeOffset = 0.0;
+    _isDragging = false;
+    _isLongPressing = false;
+    _isInDoubleTapWindow = false;
 
-    // 只清理当前组件相关的状态，避免影响其他组件
-    if (_swipeManager.currentSwipingComponent == this) {
-      debugPrint('重置当前组件的滑动状态');
-      _swipeManager.endSwipe(this);
-    }
-    // 移除强制重置其他组件的逻辑，避免过度清理
-
+    // 取消所有定时器
     _cancelLongPressDetection();
+    _cancelDoubleTapTimer();
     _resetGestureState();
-    debugPrint('重置所有手势状态');
+
+    // 如果之前有任何滑动或拖拽状态，强制重绘
+    if (wasSwipingLeft || wasSwipingRight || wasDragging || wasLongPressing) {
+      markNeedsPaint();
+      debugPrint('_resetAllGestureStates: 强制重绘界面');
+    }
+
+    // 通知SwipeStateManager清理状态（但不依赖其返回值）
+    try {
+      if (_swipeManager.currentSwipingComponent == this) {
+        debugPrint('_resetAllGestureStates: 通知SwipeStateManager结束滑动');
+        _swipeManager.endSwipe(this);
+      }
+    } catch (e) {
+      debugPrint('_resetAllGestureStates: SwipeStateManager清理失败，继续执行: $e');
+    }
+
+    debugPrint('_resetAllGestureStates: 状态重置完成');
   }
 
   /// 重置手势检测状态（不影响滑动选中状态）
   void _resetGestureDetectionStates() {
+    debugPrint('_resetGestureDetectionStates: 重置手势检测状态');
     _dragStartPosition = null;
     _cancelLongPressDetection();
     _resetGestureState();
-    debugPrint('重置手势检测状态');
+    _isInDoubleTapWindow = false;
+    debugPrint('_resetGestureDetectionStates: 重置完成');
   }
 
   /// 手势处理流程说明：
@@ -782,6 +874,25 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   /// 检查是否处于长按状态
   bool get isLongPressing => _isLongPressing;
+
+  /// 公共方法：强制重置所有手势状态
+  /// 用于在界面不响应时从外部强制重置
+  void forceResetGestureStates() {
+    debugPrint('forceResetGestureStates: 外部调用强制重置');
+    _emergencyStateReset();
+  }
+
+  /// 公共方法：检查当前是否有活跃的手势状态
+  bool get hasActiveGestureState {
+    return _isSwipingLeft ||
+        _isSwipingRight ||
+        _isDragging ||
+        _isLongPressing ||
+        _isInDoubleTapWindow ||
+        _dragStartPosition != null ||
+        _longPressTimer != null ||
+        _doubleTapTimer != null;
+  }
 }
 
 /// 滑动状态信息类

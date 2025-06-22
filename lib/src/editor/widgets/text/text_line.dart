@@ -1639,6 +1639,17 @@ class RenderEditableTextLine extends RenderEditableBox
   void debugLongPress() {
     // No-op, as per the new implementation
   }
+
+  /// 强制重置手势状态 - 用于解决界面不响应问题
+  void forceResetGestureStates() {
+    // 调用混入类的强制重置方法
+    (this as GestureHandlerMixin).forceResetGestureStates();
+  }
+
+  /// 检查是否有活跃的手势状态
+  bool get hasActiveGestureState {
+    return (this as GestureHandlerMixin).hasActiveGestureState;
+  }
 }
 
 class _TextLineElement extends RenderObjectElement {
