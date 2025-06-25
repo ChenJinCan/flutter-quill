@@ -448,8 +448,12 @@ class EditorTextSelectionGestureDetectorBuilder {
     ValueNotifier<Offset?>? dragOffsetNotifier,
     QuillMagnifierBuilder? quillMagnifierBuilder,
   }) {
-    // 完全禁用长按手势识别器，避免与自定义手势冲突
-    // 无论编辑模式还是只读模式都不注册长按手势回调
+    // 动态决定是否启用原生长按手势
+    // 只有在已经有焦点且有有效光标时才启用原生长按
+    final hasFocusAndCursor = editor != null &&
+        editor!.widget.config.focusNode.hasFocus &&
+        editor!.widget.controller.selection.isValid &&
+        editor!.widget.controller.selection.isCollapsed;
 
     return EditorTextSelectionGestureDetector(
       key: key,
@@ -458,10 +462,11 @@ class EditorTextSelectionGestureDetectorBuilder {
       onForcePressEnd: delegate.forcePressEnabled ? onForcePressEnd : null,
       onSingleTapUp: onSingleTapUp,
       onSingleTapCancel: onSingleTapCancel,
-      // 完全禁用长按手势回调，让底层的handleEvent处理所有长按事件
-      onSingleLongTapStart: null,
-      onSingleLongTapMoveUpdate: null,
-      onSingleLongTapEnd: null,
+      // 只在已有光标的情况下启用原生长按手势
+      onSingleLongTapStart: hasFocusAndCursor ? onSingleLongTapStart : null,
+      onSingleLongTapMoveUpdate:
+          hasFocusAndCursor ? onSingleLongTapMoveUpdate : null,
+      onSingleLongTapEnd: hasFocusAndCursor ? onSingleLongTapEnd : null,
       onDoubleTapDown: onDoubleTapDown,
       onSecondarySingleTapUp: onSecondarySingleTapUp,
       onDragSelectionStart: onDragSelectionStart,

@@ -367,6 +367,7 @@ class QuillEditorState extends State<QuillEditor>
         onSwipeStart: config.onSwipeStart,
         onSwipeEnd: config.onSwipeEnd,
         onComponentSelected: config.onComponentSelected,
+        gestureMode: config.gestureMode,
       ),
     );
 

@@ -17,6 +17,7 @@ import '../../../editor/widgets/text/swipe_manager.dart';
 import '../../../toolbar/theme/quill_dialog_theme.dart';
 import '../../widgets/text/magnifier.dart';
 import '../../widgets/text/utils/text_block_utils.dart';
+import '../../widgets/text/gesture_handler_mixin.dart';
 import '../builders/leading_block_builder.dart';
 import 'events/events.dart';
 
@@ -79,6 +80,7 @@ class QuillRawEditorConfig {
     this.onSwipeEnd,
     this.onComponentSelected,
     this.onComponentUnselected,
+    this.gestureMode = GestureMode.editing,
   });
 
   /// Controls whether this editor has keyboard focus.
@@ -433,4 +435,9 @@ class QuillRawEditorConfig {
 
   /// 组件取消选中回调
   final void Function(Line? line, Block? block)? onComponentUnselected;
+
+  /// 手势模式配置
+  /// - [GestureMode.editing]: 编辑模式，原生手势优先
+  /// - [GestureMode.organizing]: 组织模式，自定义手势优先
+  final GestureMode gestureMode;
 }

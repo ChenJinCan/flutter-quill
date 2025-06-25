@@ -862,6 +862,20 @@ class RenderEditableTextLine extends RenderEditableBox
   VoidCallback? onSwipeRight;
 
   @override
+  GestureConfig get gestureConfig {
+    // 根据当前状态动态返回手势配置
+    // 编辑模式下也允许拖拽，具体是否执行由 shouldPreventGestureWhenHasCursor 决定
+    final isEditingMode = hasFocus && textSelection.isValid;
+
+    return GestureConfig(
+      mode: isEditingMode ? GestureMode.editing : GestureMode.organizing,
+      enableSwipe: true,
+      enableLongPress: true,
+      enableDrag: true,
+    );
+  }
+
+  @override
   String get componentId => 'TextLine-${line.documentOffset}';
 
   @override
@@ -886,11 +900,24 @@ class RenderEditableTextLine extends RenderEditableBox
 
   @override
   bool shouldPreventGestureWhenHasCursor() {
-    // 检查是否有光标显示在当前TextLine上
-    return hasFocus &&
-        cursorCont.show.value &&
-        containsCursor() &&
-        textSelection.isCollapsed;
+    // 只有当光标确实在当前行且是折叠状态时，才阻止自定义手势
+    if (!hasFocus || !cursorCont.show.value) {
+      return false;
+    }
+
+    // 检查光标是否在当前行
+    if (containsCursor() && textSelection.isCollapsed) {
+      // 光标在当前行，禁用自定义手势，让原生手势处理
+      return true;
+    }
+
+    // 有选择范围时，根据手势模式决定
+    if (!textSelection.isCollapsed && containsTextSelection()) {
+      // 如果选择范围在当前行，编辑模式下禁用自定义手势
+      return gestureConfig.mode == GestureMode.editing;
+    }
+
+    return false;
   }
 
   /// 设置滑动回调函数

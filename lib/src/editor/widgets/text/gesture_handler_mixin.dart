@@ -23,9 +23,16 @@ import 'swipe_manager.dart';
 /// - 如果界面不响应，可以调用 forceResetGestureStates() 强制重置
 /// - 可以通过 hasActiveGestureState 检查是否有活跃的手势状态
 
+/// 手势模式枚举
+enum GestureMode {
+  editing, // 编辑模式：原生手势优先
+  organizing, // 组织模式：自定义手势优先
+}
+
 /// 手势处理配置类
 class GestureConfig {
   const GestureConfig({
+    this.mode = GestureMode.editing,
     this.enableSwipe = true,
     this.enableLongPress = true,
     this.enableDrag = true,
@@ -36,6 +43,9 @@ class GestureConfig {
     this.longPressDuration = const Duration(milliseconds: 700),
     this.maxSwipeOffset = 40,
   });
+
+  /// 手势模式
+  final GestureMode mode;
 
   /// 是否启用滑动手势
   final bool enableSwipe;
@@ -132,22 +142,28 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return false;
     }
 
+    // 获取当前手势模式
+    final isEditingMode = gestureConfig.mode == GestureMode.editing;
+
     // 检查是否有光标显示在当前组件上
     final hasCursorOnThisComponent =
         hasFocus && shouldPreventGestureWhenHasCursor();
 
-    // 在聚焦状态下的限制检查
-    if (hasFocus) {
-      // 聚焦时不允许滑动操作
-      if (!gestureConfig.enableDrag) return false;
-
-      // 如果当前组件有光标，禁用所有手势
+    // 编辑模式下的处理
+    if (isEditingMode) {
+      // 如果有光标在当前组件，禁用滑动手势，但允许拖拽（会在长按检测时再次检查）
       if (hasCursorOnThisComponent) {
-        debugPrint('当前组件被选中且聚焦，禁用所有手势操作');
-        return false;
+        debugPrint('编辑模式：光标在当前组件，禁用滑动但允许检测拖拽');
+        return gestureConfig.enableDrag || gestureConfig.enableLongPress;
+      }
+
+      // 如果有焦点但光标不在当前组件，允许拖拽和长按
+      if (hasFocus) {
+        return true;
       }
     }
 
+    // 组织模式下，允许所有手势
     return true;
   }
 
@@ -279,9 +295,12 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
     debugPrint('PointerDown: 开始新的手势检测 ${event.localPosition}');
 
-    // 如果当前组件有光标，禁用所有手势
-    if (hasFocus && shouldPreventGestureWhenHasCursor()) {
-      debugPrint('当前组件被选中且聚焦，不启动任何手势检测');
+    // 根据手势模式决定是否启动长按检测
+    final isEditingMode = gestureConfig.mode == GestureMode.editing;
+
+    // 编辑模式下，如果有光标在当前组件，不启动自定义手势
+    if (isEditingMode && hasFocus && shouldPreventGestureWhenHasCursor()) {
+      debugPrint('编辑模式且光标在当前组件，不启动自定义手势检测');
       return;
     }
 
@@ -302,6 +321,9 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
     debugPrint(
         'PointerMove: delta=$delta, horizontal=$horizontalDistance, vertical=$verticalDistance');
+
+    // 编辑模式下的特殊处理
+    final isEditingMode = gestureConfig.mode == GestureMode.editing;
 
     // 如果在双击窗口内有移动，取消长按检测（避免误触发拖拽）
     if (_isInDoubleTapWindow && horizontalDistance > 5.0) {
@@ -344,12 +366,13 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 简化的滑动检测：只检查基本条件，并且要避免双击冲突
+    // 滑动检测（编辑模式下有焦点时禁用）
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
         !_isScrolling &&
         !_isInDoubleTapWindow &&
+        !(isEditingMode && hasFocus) &&
         horizontalDistance > gestureConfig.moveThreshold &&
         verticalDistance < horizontalDistance &&
         !(_isSwipingLeft || _isSwipingRight)) {
@@ -501,6 +524,13 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
       if (_isInDoubleTapWindow) {
         debugPrint('长按定时器触发时检测到双击窗口，取消长按拖拽');
+        return;
+      }
+
+      // 编辑模式下的特殊处理：只有当光标在当前组件时才阻止拖拽
+      final isEditingMode = gestureConfig.mode == GestureMode.editing;
+      if (isEditingMode && hasFocus && shouldPreventGestureWhenHasCursor()) {
+        debugPrint('编辑模式且光标在当前组件，不处理自定义长按拖拽');
         return;
       }
 

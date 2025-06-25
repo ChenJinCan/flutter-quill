@@ -229,8 +229,9 @@ class SwipeStateManager {
     final lineStartOffset = component.documentOffset;
     final lineEndOffset = lineStartOffset + component.documentLength;
 
-    // 如果光标在当前TextLine范围内，禁止拖拽
+    // 如果光标在当前TextLine范围内，禁止拖拽（让原生手势处理）
     if (cursorOffset >= lineStartOffset && cursorOffset < lineEndOffset) {
+      debugPrint('光标在当前行，禁止自定义拖拽');
       return false;
     }
 

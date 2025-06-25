@@ -460,11 +460,21 @@ class RenderEditableTextBlock extends RenderEditableContainerBox
   bool hasFocus;
 
   @override
-  GestureConfig get gestureConfig => const GestureConfig(
-        enableSwipe: false, // TextBlock 禁用滑动功能
-        enableLongPress: true,
-        enableDrag: true,
-      );
+  GestureConfig get gestureConfig {
+    // TextBlock 使用组织模式，因为通常没有光标
+    return const GestureConfig(
+      mode: GestureMode.organizing,
+      enableSwipe: false, // TextBlock 禁用滑动功能
+      enableLongPress: true,
+      enableDrag: true,
+    );
+  }
+
+  @override
+  bool shouldPreventGestureWhenHasCursor() {
+    // TextBlock 通常不包含光标，返回 false
+    return false;
+  }
 
   @override
   String get componentId => 'TextBlock-${container.documentOffset}';
