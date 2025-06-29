@@ -409,9 +409,15 @@ class QuillController extends ChangeNotifier {
     );
   }
 
-  void updateSelection(TextSelection textSelection, ChangeSource source) {
+  void updateSelection(
+    TextSelection textSelection,
+    ChangeSource source, {
+    bool shouldNotifyListeners = true,
+  }) {
     _updateSelection(textSelection);
-    notifyListeners();
+    if (shouldNotifyListeners) {
+      notifyListeners();
+    }
   }
 
   void compose(Delta delta, TextSelection textSelection, ChangeSource source) {
