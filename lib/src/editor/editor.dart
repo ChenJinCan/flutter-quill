@@ -207,7 +207,7 @@ class QuillEditorState extends State<QuillEditor>
   // 监听器函数，用于在文本选择变化时清除滑动选中状态
   void _onSelectionChanged() {
     if (controller.selection.isValid) {
-      _swipeManager.clearSelection();
+      // _swipeManager.clearSelection();
     }
   }
 
