@@ -14,7 +14,7 @@ class History {
 
   HistoryStack stack = HistoryStack.empty();
 
-  bool get hasUndo => stack.undo.isNotEmpty;
+  bool get hasUndo => stack.undo.isNotEmpty && stack.undo.length > 1;
 
   bool get hasRedo => stack.redo.isNotEmpty;
 
