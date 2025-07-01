@@ -37,6 +37,7 @@ class TextLine extends StatefulWidget {
     this.customStyleBuilder,
     this.customRecognizerBuilder,
     this.customLinkPrefixes = const <String>[],
+    this.isAIProcessing = false,
     super.key,
   });
 
@@ -53,6 +54,7 @@ class TextLine extends StatefulWidget {
   final LinkActionPicker linkActionPicker;
   final List<String> customLinkPrefixes;
   final TextRange composingRange;
+  final bool isAIProcessing;
 
   @override
   State<TextLine> createState() => _TextLineState();
@@ -743,6 +745,8 @@ class EditableTextLine extends RenderObjectWidget {
     super.key,
     this.onSwipeLeft,
     this.onSwipeRight,
+    this.isAIProcessing = false,
+    this.tickerProvider,
   });
 
   final Line line;
@@ -761,6 +765,8 @@ class EditableTextLine extends RenderObjectWidget {
   final BoxDecoration? decoration;
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
+  final bool isAIProcessing;
+  final TickerProvider? tickerProvider;
 
   @override
   RenderObjectElement createElement() {
@@ -783,6 +789,8 @@ class EditableTextLine extends RenderObjectWidget {
       decoration,
       onSwipeLeft: onSwipeLeft,
       onSwipeRight: onSwipeRight,
+      isAIProcessing: isAIProcessing,
+      tickerProvider: tickerProvider,
     );
   }
 
@@ -804,7 +812,8 @@ class EditableTextLine extends RenderObjectWidget {
       ..setSwipeCallbacks(
         onSwipeLeft: onSwipeLeft,
         onSwipeRight: onSwipeRight,
-      );
+      )
+      ..setAIProcessing(isAIProcessing, tickerProvider: tickerProvider);
   }
 
   EdgeInsetsGeometry _getPadding() {
@@ -835,7 +844,14 @@ class RenderEditableTextLine extends RenderEditableBox
     this.decoration, {
     this.onSwipeLeft,
     this.onSwipeRight,
-  });
+    bool isAIProcessing = false,
+    TickerProvider? tickerProvider,
+  }) {
+    // 初始化AI处理状态
+    if (isAIProcessing && tickerProvider != null) {
+      setAIProcessing(true, tickerProvider: tickerProvider);
+    }
+  }
 
   RenderBox? _leading;
   RenderContentProxyBox? _body;
@@ -860,6 +876,13 @@ class RenderEditableTextLine extends RenderEditableBox
   // 滑动手势回调
   VoidCallback? onSwipeLeft;
   VoidCallback? onSwipeRight;
+
+  // AI处理状态相关属性
+  bool _isAIProcessing = false;
+  AnimationController? _aiAnimationController;
+  Animation<double>? _aiPulseAnimation;
+  Animation<Color?>? _aiColorAnimation;
+  late TickerProvider _tickerProvider;
 
   @override
   GestureConfig get gestureConfig {
@@ -1281,6 +1304,8 @@ class RenderEditableTextLine extends RenderEditableBox
       cursorCont.color.removeListener(safeMarkNeedsPaint);
       _attachedToCursorController = false;
     }
+    // 清理AI动画控制器
+    _stopAIAnimation();
   }
 
   @override
@@ -1462,6 +1487,32 @@ class RenderEditableTextLine extends RenderEditableBox
             paintRect.topLeft,
             ImageConfiguration(size: paintRect.size),
           );
+    }
+
+    // 绘制AI处理状态背景
+    if (_isAIProcessing &&
+        _aiColorAnimation != null &&
+        _aiPulseAnimation != null) {
+      final paint = Paint()
+        ..color = _aiColorAnimation!.value ?? Colors.transparent
+        ..style = PaintingStyle.fill;
+
+      final rect = effectiveOffset & size;
+      final roundedRect = RRect.fromRectAndRadius(
+        rect,
+        const Radius.circular(6),
+      );
+
+      // 绘制脉冲背景
+      context.canvas.drawRRect(roundedRect, paint);
+
+      // 绘制边框
+      final borderPaint = Paint()
+        ..color = const Color(0xFF1890FF)
+            .withValues(alpha: 0.4 * _aiPulseAnimation!.value)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      context.canvas.drawRRect(roundedRect, borderPaint);
     }
 
     if (_body != null) {
@@ -1668,14 +1719,108 @@ class RenderEditableTextLine extends RenderEditableBox
   }
 
   /// 强制重置手势状态 - 用于解决界面不响应问题
+  @override
   void forceResetGestureStates() {
     // 调用混入类的强制重置方法
-    (this as GestureHandlerMixin).forceResetGestureStates();
+    super.forceResetGestureStates();
   }
 
   /// 检查是否有活跃的手势状态
+  @override
   bool get hasActiveGestureState {
-    return (this as GestureHandlerMixin).hasActiveGestureState;
+    return super.hasActiveGestureState;
+  }
+
+  /// 设置AI处理状态
+  void setAIProcessing(bool processing, {TickerProvider? tickerProvider}) {
+    if (_isAIProcessing == processing) return;
+
+    _isAIProcessing = processing;
+
+    if (processing && attached) {
+      _startAIAnimation(tickerProvider);
+    } else {
+      _stopAIAnimation();
+    }
+
+    // 使用安全的重绘方法
+    safeMarkNeedsPaint();
+  }
+
+  /// 安全的动画监听器，防止TickerProvider失效时的错误
+  void _safeAnimationListener() {
+    try {
+      if (attached && _aiAnimationController != null) {
+        safeMarkNeedsPaint();
+      }
+    } catch (e) {
+      // 如果重绘失败，可能是因为组件已销毁，停止动画
+      _stopAIAnimation();
+    }
+  }
+
+  /// 开始AI处理动画
+  void _startAIAnimation(TickerProvider? tickerProvider) {
+    if (tickerProvider == null || !attached) return;
+
+    // 先清理旧的动画资源
+    _stopAIAnimation();
+
+    _tickerProvider = tickerProvider;
+
+    try {
+      // 创建动画控制器
+      _aiAnimationController = AnimationController(
+        duration: const Duration(milliseconds: 1500),
+        vsync: _tickerProvider,
+      );
+
+      // 创建脉冲动画
+      _aiPulseAnimation = Tween<double>(
+        begin: 0.3,
+        end: 1.0,
+      ).animate(CurvedAnimation(
+        parent: _aiAnimationController!,
+        curve: Curves.easeInOut,
+      ));
+
+      // 创建颜色动画
+      _aiColorAnimation = ColorTween(
+        begin: const Color(0x30E3F2FD), // 浅蓝半透明
+        end: const Color(0x8064B5F6), // 深蓝半透明
+      ).animate(CurvedAnimation(
+        parent: _aiAnimationController!,
+        curve: Curves.easeInOut,
+      ));
+
+      // 添加动画监听器，使用安全的重绘方法
+      _aiAnimationController!.addListener(_safeAnimationListener);
+
+      // 开始循环动画
+      _aiAnimationController!.repeat(reverse: true);
+    } catch (e) {
+      // 如果动画创建失败，清理资源
+      _stopAIAnimation();
+    }
+  }
+
+  /// 停止AI处理动画
+  void _stopAIAnimation() {
+    if (_aiAnimationController != null) {
+      try {
+        _aiAnimationController!.removeListener(_safeAnimationListener);
+        _aiAnimationController!.dispose();
+      } catch (e) {
+        // 忽略销毁时的错误
+      }
+      _aiAnimationController = null;
+    }
+
+    _aiPulseAnimation = null;
+    _aiColorAnimation = null;
+
+    // 使用安全的重绘方法
+    safeMarkNeedsPaint();
   }
 }
 
