@@ -1128,6 +1128,7 @@ class QuillRawEditorState extends EditorState
 
   @override
   void dispose() {
+    SwipeStateManager().clearCurrentSwipingComponent();
     WidgetsBinding.instance.removeObserver(this);
     closeConnectionIfNeeded();
     _keyboardVisibilitySubscription?.cancel();

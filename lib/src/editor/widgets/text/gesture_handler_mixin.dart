@@ -463,10 +463,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
           try {
             if (direction == SwipeDirection.left) {
               _onSwipeLeft?.call();
-              debugPrint('触发左滑回调');
             } else {
               _onSwipeRight?.call();
-              debugPrint('触发右滑回调');
             }
           } catch (e) {
             debugPrint('滑动回调执行失败: $e');
@@ -485,8 +483,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
           debugPrint('ComponentSelect回调执行失败: $e');
         }
       } else {
-        debugPrint(
-            '滑动距离不足，取消滑动 (需要距离>=${gestureConfig.swipeThreshold}, 当前:$horizontalDistance)');
+        SwipeStateManager().clearCurrentSwipingComponent();
       }
 
       // 强制重置滑动状态，确保界面能响应
@@ -610,6 +607,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   /// 重置手势状态
   void _resetGestureState() {
+    debugPrint('重置手势状态');
     _horizontalMovements.clear();
   }
 

@@ -1508,10 +1508,10 @@ class RenderEditableTextLine extends RenderEditableBox
 
       // 绘制边框
       final borderPaint = Paint()
-        ..color = const Color(0xFF1890FF)
-            .withValues(alpha: 0.4 * _aiPulseAnimation!.value)
+        ..color = const Color.fromARGB(255, 56, 155, 247)
+            .withValues(alpha: 0.2 * _aiPulseAnimation!.value)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
+        ..strokeWidth = 1;
       context.canvas.drawRRect(roundedRect, borderPaint);
     }
 

@@ -254,7 +254,7 @@ class SwipeStateManager {
     // 如果有其他组件在滑动，先重置它们
     if (_currentSwipingComponent != null &&
         _currentSwipingComponent != component) {
-      _currentSwipingComponent!.resetSwipe();
+      _currentSwipingComponent?.resetSwipe();
       _currentSwipingComponent = null;
     }
 
