@@ -14,6 +14,13 @@ class SwipeStateManager {
   SwipeStateManager._internal();
   static final SwipeStateManager _instance = SwipeStateManager._internal();
 
+  bool _isScrollingForActionSheet = false;
+  bool get isScrollingForActionSheet => _isScrollingForActionSheet;
+
+  void setIsScrollingForActionSheet(bool value) {
+    _isScrollingForActionSheet = value;
+  }
+
   /// 当前正在滑动的组件
   SwipeableComponent? _currentSwipingComponent;
 
@@ -135,6 +142,10 @@ class SwipeStateManager {
   /// 滚动事件监听器 - 在滚动时重置所有滑动状态
   void _onScrollChanged() {
     debugPrint('SwipeStateManager: 检测到滚动，清除所有组件状态');
+
+    if (isScrollingForActionSheet) {
+      return;
+    }
 
     // 如果有组件在滑动状态，重置它们
     _currentSwipingComponent?.resetSwipe();

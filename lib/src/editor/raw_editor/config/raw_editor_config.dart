@@ -3,9 +3,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:meta/meta.dart';
 
-import '../../../document/nodes/node.dart';
-import '../../../document/nodes/line.dart';
 import '../../../document/nodes/block.dart';
+import '../../../document/nodes/line.dart';
+import '../../../document/nodes/node.dart';
 import '../../../editor/embed/embed_editor_builder.dart';
 import '../../../editor/raw_editor/raw_editor.dart';
 import '../../../editor/raw_editor/raw_editor_state.dart';
@@ -15,9 +15,9 @@ import '../../../editor/widgets/delegate.dart';
 import '../../../editor/widgets/link.dart';
 import '../../../editor/widgets/text/swipe_manager.dart';
 import '../../../toolbar/theme/quill_dialog_theme.dart';
+import '../../widgets/text/gesture_handler_mixin.dart';
 import '../../widgets/text/magnifier.dart';
 import '../../widgets/text/utils/text_block_utils.dart';
-import '../../widgets/text/gesture_handler_mixin.dart';
 import '../builders/leading_block_builder.dart';
 import 'events/events.dart';
 

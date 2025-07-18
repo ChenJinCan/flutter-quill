@@ -31,6 +31,8 @@ export 'src/editor/widgets/text/drag_aware_scroll_physics.dart';
 export 'src/editor/widgets/text/magnifier.dart';
 export 'src/editor/widgets/text/swipe_manager.dart'
     show SwipeDirection, SwipeableComponent, SwipeStateManager;
+export 'src/editor/widgets/text/text_block.dart';
+export 'src/editor/widgets/text/text_line.dart';
 export 'src/editor/widgets/text/utils/text_block_utils.dart';
 export 'src/editor_toolbar_controller_shared/copy_cut_service/copy_cut_service.dart';
 export 'src/editor_toolbar_controller_shared/copy_cut_service/copy_cut_service_provider.dart';

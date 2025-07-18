@@ -1,4 +1,3 @@
-/// @docImport '../../rules/insert.dart' show AutoFormatMultipleLinksRule;
 library;
 
 import 'dart:ui' as ui;
@@ -9,8 +8,8 @@ import 'package:meta/meta.dart' show experimental;
 
 import '../../../flutter_quill.dart' show Block, Line;
 import '../../document/nodes/node.dart';
-import '../../editor/widgets/text/swipe_manager.dart';
 import '../../editor/widgets/text/gesture_handler_mixin.dart';
+import '../../editor/widgets/text/swipe_manager.dart';
 import '../../toolbar/theme/quill_dialog_theme.dart';
 import '../embed/embed_editor_builder.dart';
 import '../raw_editor/builders/leading_block_builder.dart';

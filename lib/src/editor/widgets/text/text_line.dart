@@ -1778,7 +1778,7 @@ class RenderEditableTextLine extends RenderEditableBox
       // 创建脉冲动画
       _aiPulseAnimation = Tween<double>(
         begin: 0.3,
-        end: 1.0,
+        end: 1,
       ).animate(CurvedAnimation(
         parent: _aiAnimationController!,
         curve: Curves.easeInOut,

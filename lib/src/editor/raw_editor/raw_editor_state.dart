@@ -592,8 +592,6 @@ class QuillRawEditorState extends EditorState
   void _handleTextLineSwipeRight(Line node) {
     // TODO: 在这里实现右滑逻辑
     // 例如可以增加缩进、创建子项等
-    // debugPrint('Right swipe on line: ${node.toPlainText()}');
-
     // 示例：右滑可以增加缩进
     if (!widget.config.readOnly) {}
   }

@@ -703,9 +703,9 @@ class _QuillEditorSelectionGestureDetectorBuilder
     final documentText = _state.controller.document.toPlainText();
 
     // Search for words in both directions from the current position
-    final searchRadius = 20; // Search within 20 characters
+    const searchRadius = 20; // Search within 20 characters
 
-    for (int radius = 1; radius <= searchRadius; radius++) {
+    for (var radius = 1; radius <= searchRadius; radius++) {
       // Try positions before the current position
       final beforeOffset =
           (position.offset - radius).clamp(0, documentText.length);
