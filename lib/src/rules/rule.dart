@@ -63,6 +63,7 @@ class Rules {
     ResetLineFormatOnNewLineRule(),
     AutoFormatLinksRule(),
     AutoFormatMultipleLinksRule(),
+    MarkdownShortcutInsertRule(),
     PreserveInlineStylesRule(),
     CatchAllInsertRule(),
     EnsureEmbedLineRule(),

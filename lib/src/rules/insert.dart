@@ -657,3 +657,126 @@ class _NextNewLine {
   final Operation? operation;
   final int? skipped;
 }
+
+/// Markdown 快捷输入规则：当用户在行首键入空格，且命中前缀时触发
+///
+/// 支持的标记格式：
+/// - 有序列表：1. 、1)
+/// - 无序列表：- 、* 、+
+/// - 标题：# 、## 、### 、#### 、##### 、######
+/// - 引用块：>
+///
+/// 使用示例：
+/// 1. 在行首输入 "1. " 然后敲空格 → 转换为有序列表
+/// 2. 在行首输入 "- " 然后敲空格 → 转换为无序列表
+/// 3. 在行首输入 "# " 然后敲空格 → 转换为一级标题
+/// 4. 在行首输入 "> " 然后敲空格 → 转换为引用块
+class MarkdownShortcutInsertRule extends InsertRule {
+  const MarkdownShortcutInsertRule();
+
+  // 精确匹配：行首 + 标记 + 恰好一个空格
+  static final ol = RegExp(r'^\s*(\d+)([.)])$'); // 1. 或 1) + 恰好一个空格
+  static final ul = RegExp(r'^\s*([-*+])$'); // - / * / + + 恰好一个空格
+  static final header = RegExp(r'^\s*(#{1,6})$'); // # 到 ###### + 恰好一个空格
+  static final blockquote = RegExp(r'^\s*>$'); // > + 恰好一个空格
+
+  @override
+  Delta? applyRule(
+    Document document,
+    int index, {
+    int? len,
+    Object? data,
+    Attribute? attribute,
+  }) {
+    // 仅拦截"用户插入一个空格"的场景；其它交给默认规则
+    if (data is! String || data != ' ') return null;
+
+    // 找到当前行的起止
+    final child = document.queryChild(index);
+    final line = child.node; // Line
+    if (line == null) return null;
+
+    final lineStart = line.offset;
+    final caret = index; // 光标位置（空格插入点）
+
+    // 获取从行首到光标的文本（含刚输入的空格之前的内容）
+    final headLen = caret - lineStart;
+    if (headLen <= 0) return null;
+    final beforeSpace = document.getPlainText(lineStart, headLen);
+
+    Attribute? targetAttr;
+    int markerStart = -1;
+    int markerLen = 0;
+
+    // 计算前导空白长度
+    final leadingSpaces = beforeSpace.length - beforeSpace.trimLeft().length;
+
+    // 检查各种 Markdown 模式
+    if (ol.hasMatch(beforeSpace)) {
+      targetAttr = Attribute.ol;
+      markerLen = beforeSpace.length - leadingSpaces;
+      markerStart = lineStart + leadingSpaces;
+    } else if (ul.hasMatch(beforeSpace)) {
+      targetAttr = Attribute.ul;
+      markerLen = beforeSpace.length - leadingSpaces;
+      markerStart = lineStart + leadingSpaces;
+    } else if (header.hasMatch(beforeSpace)) {
+      final match = header.firstMatch(beforeSpace)!;
+      final headerLevel = match.group(1)!.length; // # 的个数
+      targetAttr = HeaderAttribute(level: headerLevel);
+      markerLen = beforeSpace.length - leadingSpaces;
+      markerStart = lineStart + leadingSpaces;
+    } else if (blockquote.hasMatch(beforeSpace)) {
+      targetAttr = Attribute.blockQuote;
+      markerLen = beforeSpace.length - leadingSpaces;
+      markerStart = lineStart + leadingSpaces;
+    } else {
+      return null; // 不匹配，交回默认规则
+    }
+
+    // 若当前已在相同样式里，则不重复处理
+    final stylesHere = document.collectStyle(caret, 0);
+    if (stylesHere.containsKey(targetAttr.key)) {
+      return null;
+    }
+
+    // 对于标题，需要检查是否已经在其他块样式中（标题是排他的）
+    if (targetAttr.key == Attribute.header.key) {
+      // 检查是否已在其他排他性块样式中
+      for (final exclusiveKey in Attribute.exclusiveBlockKeys) {
+        if (stylesHere.containsKey(exclusiveKey)) {
+          return null;
+        }
+      }
+    }
+
+    // 目标效果：
+    // 1) 删除标记（如 "1. " 或 "- " 或 "# "）
+    // 2) 不真正插入这个空格（由我们接管，所以不插）
+    // 3) 给当前行的换行符施加 line-level 的属性
+    //
+    // 构造 Delta：
+    // - retain 到标记起点
+    // - delete 标记长度（把前缀抹掉）
+    // - retain 到本行换行符，并对换行 retain(1, {attr: ...})
+    final result = Delta()
+      ..retain(markerStart)
+      ..delete(markerLen);
+
+    // 找到本行换行符位置（line 长度包含末尾 \n）
+    final linePlain = line.toPlainText();
+    final newlineIndexInDoc = lineStart + linePlain.length - 1; // 指向该行的 '\n'
+
+    // ✅ 修正点：retain 到换行符，需要扣除前面 delete 的长度
+    final consumedBefore =
+        markerStart + markerLen; // 已消耗（retain + delete）的"原文"长度
+    final remainToNewline = newlineIndexInDoc - consumedBefore;
+    if (remainToNewline > 0) {
+      result.retain(remainToNewline);
+    }
+    // 对换行应用目标属性
+    result.retain(1, targetAttr.toJson());
+
+    return result;
+  }
+}
