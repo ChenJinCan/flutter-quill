@@ -1154,6 +1154,7 @@ class _EditorTextSelectionGestureDetectorState
       child: (widget.quillMagnifierBuilder == null)
           ? widget.child
           : Stack(
+              clipBehavior: Clip.none,
               children: [
                 widget.child,
                 if (_magnifierPosition != null)
