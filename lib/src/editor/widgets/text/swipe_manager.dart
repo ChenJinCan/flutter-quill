@@ -1,9 +1,12 @@
 // ignore_for_file: cascade_invocations
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../../controller/quill_controller.dart';
 import '../../../document/nodes/block.dart';
+import '../../../document/nodes/leaf.dart';
 import '../../../document/nodes/line.dart';
 import '../../../document/nodes/node.dart';
 
@@ -66,6 +69,9 @@ class SwipeStateManager {
 
   /// 焦点聚焦时隐藏拖拽覆盖层的回调
   VoidCallback? _onHideDragOverlay;
+
+  /// 不允许滑动的 Embed 列表
+  Set<String> _disabledEmbeds = {};
 
   /// 设置编辑器引用，用于在拖拽时取消focus和监听滚动
   void setEditorReferences({
@@ -217,6 +223,53 @@ class SwipeStateManager {
     _onHideDragOverlay = onHideDragOverlay;
   }
 
+  /// 设置不允许滑动的 Embed 列表
+  /// [embeds] 不允许滑动的 Embed 列表
+  void setDisabledEmbeds(List<String> embeds) {
+    _disabledEmbeds = embeds.toSet();
+    debugPrint('SwipeStateManager.setDisabledEmbeds: 设置禁用列表=$_disabledEmbeds');
+  }
+
+  /// 私有方法：检查组件是否被禁用滑动
+  /// [component] 要检查的组件
+  /// 返回 true 表示该组件被禁用滑动
+  bool _isEmbedDisabled(SwipeableComponent component) {
+    // 检查是否是包含 embed 的 TextLine
+    if (component.lineNode != null && component.lineNode!.hasEmbed) {
+      // 获取 Line 中的 Embed
+      Embed? embed;
+      for (final child in component.lineNode!.children) {
+        if (child is Embed) {
+          embed = child;
+          break;
+        }
+      }
+
+      if (embed != null) {
+        // 检查是否是 custom embed
+        if (embed.value.type == 'custom') {
+          try {
+            // 解析 custom embed 的 data
+            final embedData = embed.value.data as String;
+            final dataMap = jsonDecode(embedData);
+
+            // 检查是否包含 ndb 类型
+            if (dataMap is Map && dataMap.keys.contains('ndb')) {
+              debugPrint(
+                  'SwipeStateManager._isEmbedDisabled: 检测到 ndb embed，禁用滑动 - ${component.componentId}');
+              return true; // ndb embed 默认禁用滑动
+            }
+          } catch (e) {
+            debugPrint(
+                'SwipeStateManager._isEmbedDisabled: 解析 embed data 失败 - $e');
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   /// 检查指定组件是否应该允许拖拽
   /// 当有焦点时，只有当前光标所在的TextLine被禁止拖拽，其他的允许拖拽
   bool shouldAllowDrag(SwipeableComponent component) {
@@ -324,6 +377,13 @@ class SwipeStateManager {
     safeCurrentSwipingComponent; // 触发清理检查
     safeCurrentDraggingComponent; // 触发清理检查
     safeSelectedComponent; // 触发清理检查
+
+    // 检查组件是否被禁用滑动
+    if (_isEmbedDisabled(component)) {
+      debugPrint(
+          'SwipeStateManager.startSwipe: 组件被禁用滑动，拒绝滑动 - ${component.componentId}');
+      return false;
+    }
 
     // 如果有组件正在拖拽，不允许开始滑动
     if (_currentDraggingComponent != null) {
@@ -464,6 +524,10 @@ class SwipeStateManager {
     _scrollController = null;
     _controller = null;
     _focusNode = null;
+
+    // 清理禁用列表
+    _disabledEmbeds.clear();
+
     resetAll();
   }
 
