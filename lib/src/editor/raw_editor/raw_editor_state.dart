@@ -575,10 +575,6 @@ class QuillRawEditorState extends EditorState
   /// - 标记为完成
   /// - 删除行等
   void _handleTextLineSwipeLeft(Line node) {
-    // TODO: 在这里实现左滑逻辑
-    // 例如可以显示快捷操作菜单、标记完成等
-    // debugPrint('Left swipe on line: ${node.toPlainText()}');
-
     // 示例：左滑可以添加删除线格式
     if (!widget.config.readOnly) {}
   }
@@ -590,9 +586,6 @@ class QuillRawEditorState extends EditorState
   /// - 创建子项
   /// - 移动到其他位置等
   void _handleTextLineSwipeRight(Line node) {
-    // TODO: 在这里实现右滑逻辑
-    // 例如可以增加缩进、创建子项等
-    // 示例：右滑可以增加缩进
     if (!widget.config.readOnly) {}
   }
 
@@ -603,10 +596,6 @@ class QuillRawEditorState extends EditorState
   /// - 标记为完成
   /// - 删除块等
   void _handleTextBlockSwipeLeft(Block node) {
-    // TODO: 在这里实现左滑逻辑
-    // 例如可以显示快捷操作菜单、标记完成等
-    // debugPrint('Left swipe on block: ${node.toPlainText()}');
-
     // 示例：左滑可以删除整个块
     if (!widget.config.readOnly) {
       // 可以在这里实现删除块的逻辑
@@ -620,10 +609,6 @@ class QuillRawEditorState extends EditorState
   /// - 创建子块
   /// - 移动到其他位置等
   void _handleTextBlockSwipeRight(Block node) {
-    // TODO: 在这里实现右滑逻辑
-    // 例如可以增加缩进、创建子块等
-    // debugPrint('Right swipe on block: ${node.toPlainText()}');
-
     // 示例：右滑可以增加缩进
     if (!widget.config.readOnly) {
       // 可以在这里实现增加缩进的逻辑
@@ -1327,9 +1312,14 @@ class QuillRawEditorState extends EditorState
             _disableScrollControllerAnimateOnce = false;
             return;
           }
-          _scrollController.jumpTo(
-            math.min(offset, _scrollController.position.maxScrollExtent),
-          );
+          // 只有当滚动偏移量变化超过阈值时才滚动，避免微小变化导致的频繁跳动
+          // 这对于处理 embed 高度过大时的跳动特别重要
+          const double scrollThreshold = 5.0;
+          final currentOffset = _scrollController.offset;
+          final targetOffset = math.min(offset, _scrollController.position.maxScrollExtent);
+          if ((targetOffset - currentOffset).abs() > scrollThreshold) {
+            _scrollController.jumpTo(targetOffset);
+          }
           // _scrollController.animateTo(
           //   math.min(offset, _scrollController.position.maxScrollExtent),
           //   duration: const Duration(milliseconds: 500),

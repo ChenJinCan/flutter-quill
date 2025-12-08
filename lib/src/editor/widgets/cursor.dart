@@ -291,11 +291,13 @@ class CursorPainter {
 
     final caretHeight = editable!.getFullHeightForCaret(position);
     if (caretHeight != null) {
+      // 限制光标高度最大为40
+      final clampedCaretHeight = caretHeight > 40 ? 40.0 : caretHeight;
       if (isAppleOSApp) {
         // Center the caret vertically along the text.
         caretRect = Rect.fromLTWH(
           caretRect.left,
-          caretRect.top + (caretHeight - caretRect.height) / 2,
+          caretRect.top + (clampedCaretHeight - caretRect.height) / 2,
           caretRect.width,
           caretRect.height,
         );
@@ -307,7 +309,7 @@ class CursorPainter {
           caretRect.left,
           caretRect.top - 2.0,
           caretRect.width,
-          caretHeight,
+          clampedCaretHeight,
         );
       }
     }

@@ -67,10 +67,16 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
     // The caret is vertically centered within the line. Expand the caret's
     // height so that it spans the line because we're going to ensure that the
     // entire expanded caret is scrolled into view.
+    // 限制用于滚动计算的行高，避免 embed 高度过大时导致跳动
+    const double maxLineHeightForScroll = 60.0;
+    final preferredHeight = renderEditor.preferredLineHeight(position);
+    final clampedPreferredHeight = preferredHeight > maxLineHeightForScroll 
+        ? maxLineHeightForScroll 
+        : preferredHeight;
     final expandedRect = Rect.fromCenter(
       center: rect.center,
       width: rect.width,
-      height: math.max(rect.height, renderEditor.preferredLineHeight(position)),
+      height: math.max(rect.height, clampedPreferredHeight),
     );
 
     additionalOffset = expandedRect.height >= editableSize.height

@@ -1241,9 +1241,12 @@ class RenderEditableTextLine extends RenderEditableBox
 
   double get cursorWidth => cursorCont.style.width;
 
-  double get cursorHeight =>
-      cursorCont.style.height ??
-      preferredLineHeight(const TextPosition(offset: 0));
+  double get cursorHeight {
+    final height = cursorCont.style.height ??
+        preferredLineHeight(const TextPosition(offset: 0));
+    // 限制光标高度最大为40
+    return height > 40 ? 40.0 : height;
+  }
 
   // TODO: This is no longer producing the highest-fidelity caret
   // heights for Android, especially when non-alphabetic languages
@@ -1257,6 +1260,7 @@ class RenderEditableTextLine extends RenderEditableBox
   /// of the cursor for iOS is approximate and obtained through an eyeball
   /// comparison.
   void _computeCaretPrototype() {
+    // cursorHeight getter 已经限制了最大高度为40，这里直接使用即可
     if (isIos) {
       _caretPrototype = Rect.fromLTWH(0, 0, cursorWidth, cursorHeight + 2);
     } else {

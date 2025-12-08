@@ -1409,10 +1409,17 @@ class RenderEditor extends RenderEditableContainerBox
     // Collapsed selection => caret
     final child = childAtPosition(selection.extent);
     const kMargin = 8.0;
+    // 限制用于滚动计算的行高，避免 embed 高度过大时导致跳动
+    const double maxLineHeightForScroll = 60.0;
+
+    final lineHeight = child.preferredLineHeight(TextPosition(
+        offset: selection.extentOffset - child.container.documentOffset));
+    final clampedLineHeight = lineHeight > maxLineHeightForScroll 
+        ? maxLineHeightForScroll 
+        : lineHeight;
 
     final caretTop = endpoint.point.dy -
-        child.preferredLineHeight(TextPosition(
-            offset: selection.extentOffset - child.container.documentOffset)) -
+        clampedLineHeight -
         kMargin +
         offsetInViewport +
         scrollBottomInset;

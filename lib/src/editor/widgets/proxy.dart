@@ -109,8 +109,14 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
     ];
   }
 
+  // 限制用于光标和滚动计算的高度，避免 embed 高度过大时导致跳动
+  static const double _maxHeightForCaret = 60.0;
+
   @override
-  double getFullHeightForCaret(TextPosition position) => size.height;
+  double getFullHeightForCaret(TextPosition position) {
+    // 限制返回的高度，避免光标高度过大导致滚动跳动
+    return size.height > _maxHeightForCaret ? _maxHeightForCaret : size.height;
+  }
 
   @override
   Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) {
@@ -130,7 +136,10 @@ class RenderEmbedProxy extends RenderProxyBox implements RenderContentProxyBox {
       const TextRange(start: 0, end: 1);
 
   @override
-  double get preferredLineHeight => size.height;
+  double get preferredLineHeight {
+    // 限制返回的行高，避免在滚动计算时使用过大的值导致跳动
+    return size.height > _maxHeightForCaret ? _maxHeightForCaret : size.height;
+  }
 }
 
 class RichTextProxy extends SingleChildRenderObjectWidget {
