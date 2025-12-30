@@ -27,8 +27,12 @@ class SwipeStateManager {
   /// 当前正在滑动的组件
   SwipeableComponent? _currentSwipingComponent;
 
-  /// 当前选中的组件
-  SwipeableComponent? _selectedComponent;
+  /// 当前选中的组件（多选支持）
+  Set<SwipeableComponent> _selectedComponents = {};
+
+  /// 向后兼容：返回第一个选中的组件
+  SwipeableComponent? get _selectedComponent =>
+      _selectedComponents.isNotEmpty ? _selectedComponents.first : null;
 
   /// 当前正在拖拽的组件
   SwipeableComponent? _currentDraggingComponent;
@@ -120,14 +124,15 @@ class SwipeStateManager {
     _currentDraggingComponent?.endDrag();
     _currentDraggingComponent = null;
 
-    // 清除选中状态
-    if (_selectedComponent != null) {
-      final component = _selectedComponent!;
+    // 清除所有选中状态
+    // 创建副本以避免在遍历时并发修改错误
+    final componentsToClear = Set<SwipeableComponent>.from(_selectedComponents);
+    _selectedComponents.clear();
+    for (final component in componentsToClear) {
       component.setSelected(false);
 
       // 触发组件取消选中回调
       _onComponentUnselected?.call(component.lineNode, component.block);
-      _selectedComponent = null;
     }
 
     // 隐藏拖拽覆盖层（如果存在）
@@ -157,15 +162,19 @@ class SwipeStateManager {
     _currentSwipingComponent?.resetSwipe();
     _currentSwipingComponent = null;
 
-    // 清除选中状态（如果存在）
-    if (_selectedComponent != null) {
-      debugPrint('SwipeStateManager: 清除当前选中组件');
-      final component = _selectedComponent!;
-      component.setSelected(false);
-
-      // 触发组件取消选中回调
-      _onComponentUnselected?.call(component.lineNode, component.block);
-      _selectedComponent = null;
+    // 清除所有选中状态（如果存在）
+    if (_selectedComponents.isNotEmpty) {
+      debugPrint(
+          'SwipeStateManager: 清除当前选中组件（共${_selectedComponents.length}个）');
+      // 创建副本以避免在遍历时并发修改错误
+      final componentsToClear =
+          Set<SwipeableComponent>.from(_selectedComponents);
+      _selectedComponents.clear();
+      for (final component in componentsToClear) {
+        component.setSelected(false);
+        // 触发组件取消选中回调
+        _onComponentUnselected?.call(component.lineNode, component.block);
+      }
     }
 
     // 通知所有组件清除其选中状态（全局清理）
@@ -323,9 +332,17 @@ class SwipeStateManager {
     }
 
     // 清除之前的选中状态（如果不是当前组件）
-    if (_selectedComponent != null && _selectedComponent != component) {
-      _selectedComponent!.setSelected(false);
-      _selectedComponent = null;
+    if (_selectedComponents.isNotEmpty &&
+        !_selectedComponents.contains(component)) {
+      // 创建副本以避免在遍历时并发修改错误
+      final componentsToClear =
+          Set<SwipeableComponent>.from(_selectedComponents);
+      for (final selectedComponent in componentsToClear) {
+        if (selectedComponent != component) {
+          selectedComponent.setSelected(false);
+        }
+      }
+      _selectedComponents.removeWhere((c) => c != component);
     }
 
     // 开始拖拽时取消编辑器焦点
@@ -405,9 +422,17 @@ class SwipeStateManager {
     }
 
     // 清除之前的选中状态（如果不是当前组件）
-    if (_selectedComponent != null && _selectedComponent != component) {
-      _selectedComponent!.setSelected(false);
-      _selectedComponent = null;
+    if (_selectedComponents.isNotEmpty &&
+        !_selectedComponents.contains(component)) {
+      // 创建副本以避免在遍历时并发修改错误
+      final componentsToClear =
+          Set<SwipeableComponent>.from(_selectedComponents);
+      for (final selectedComponent in componentsToClear) {
+        if (selectedComponent != component) {
+          selectedComponent.setSelected(false);
+        }
+      }
+      _selectedComponents.removeWhere((c) => c != component);
     }
 
     // 设置当前滑动组件
@@ -440,9 +465,22 @@ class SwipeStateManager {
 
   /// 选中组件
   void selectComponent(SwipeableComponent component, SwipeDirection direction) {
-    // 清除之前的选中状态
-    if (_selectedComponent != null && _selectedComponent != component) {
-      _selectedComponent!.setSelected(false);
+    // 多选支持：切换选中状态
+    if (_selectedComponents.contains(component)) {
+      // 如果已选中，则取消选中
+      _selectedComponents.remove(component);
+      component.setSelected(false);
+
+      // 触发取消选中回调
+      _onComponentUnselected?.call(component.lineNode, component.block);
+    } else {
+      // 如果未选中，则添加选中
+      _selectedComponents.add(component);
+      component.setSelected(true);
+
+      // 触发选中回调，增加documentOffset和documentLength参数
+      _onComponentSelected?.call(component.lineNode, component.block, direction,
+          component.documentOffset, component.documentLength);
     }
 
     // 清除当前滑动状态
@@ -452,27 +490,28 @@ class SwipeStateManager {
     // 清除当前拖拽状态
     _currentDraggingComponent?.endDrag();
     _currentDraggingComponent = null;
+  }
 
-    // 设置新的选中组件
-    _selectedComponent = component;
-    component.setSelected(true);
-
-    // 触发选中回调，增加documentOffset和documentLength参数
-    _onComponentSelected?.call(component.lineNode, component.block, direction,
-        component.documentOffset, component.documentLength);
+  /// 获取所有选中的组件
+  Set<SwipeableComponent> getSelectedComponents() {
+    return Set.from(_selectedComponents);
   }
 
   /// 清除选中状态
   void clearSelection({bool triggerCallback = true}) {
-    if (_selectedComponent != null) {
-      final component = _selectedComponent!;
-      component.setSelected(false);
+    // 清除所有选中组件
+    // 创建副本以避免在遍历时并发修改错误
+    final componentsToClear = Set<SwipeableComponent>.from(_selectedComponents);
+    _selectedComponents.clear();
+    for (final component in componentsToClear) {
+      try {
+        component.setSelected(false);
+      } catch (e) {}
 
       // 触发组件取消选中回调
       if (triggerCallback) {
         _onComponentUnselected?.call(component.lineNode, component.block);
       }
-      _selectedComponent = null;
     }
   }
 
@@ -567,9 +606,13 @@ class SwipeStateManager {
 
   /// 安全获取选中组件（检查有效性）
   SwipeableComponent? get safeSelectedComponent {
-    if (_selectedComponent != null && !_isComponentValid(_selectedComponent)) {
+    // 清理无效的选中组件
+    _selectedComponents
+        .removeWhere((component) => !_isComponentValid(component));
+    if (_selectedComponents.isNotEmpty &&
+        !_isComponentValid(_selectedComponent)) {
       debugPrint('SwipeStateManager: 选中组件已被释放，自动清理');
-      _selectedComponent = null;
+      _selectedComponents.clear();
     }
     return _selectedComponent;
   }

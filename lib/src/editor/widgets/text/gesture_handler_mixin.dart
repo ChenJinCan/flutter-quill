@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import 'swipe_manager.dart';
 
@@ -579,6 +580,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       }
 
       _isDragging = true;
+      // 添加触觉反馈
+      HapticFeedback.mediumImpact();
       final globalPosition = localToGlobal(position);
       debugPrint('开始拖拽成功，更新拖拽位置: $globalPosition');
       _swipeManager.updateDrag(globalPosition);

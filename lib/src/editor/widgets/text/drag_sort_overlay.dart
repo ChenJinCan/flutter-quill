@@ -219,22 +219,42 @@ class DragSortOverlay {
     final completeLineDelta = controller.document
         .toDelta()
         .slice(sourceOffset, sourceOffset + sourceLength);
+    
+    // 检查Delta是否为空
+    if (completeLineDelta.isEmpty) {
+      return;
+    }
+    
     final originalSkipRequestKeyboard = controller.skipRequestKeyboard;
     controller.skipRequestKeyboard = true;
 
+    // 记录原始文档长度
+    final originalDocumentLength = controller.document.length;
+    
     int adjustedInsertionOffset = insertionOffset;
     if (insertionOffset > sourceOffset) {
       adjustedInsertionOffset = insertionOffset - sourceLength;
     }
 
     try {
+      // 先删除源内容
       controller.replaceText(sourceOffset, sourceLength, '', null,
           shouldNotifyListeners: false);
 
+      // 获取删除后的文档长度
       final documentLength = controller.document.length;
-      adjustedInsertionOffset =
-          adjustedInsertionOffset.clamp(0, documentLength);
+      
+      // 特殊处理：如果原始插入位置等于文档长度（拖拽到底部），
+      // 删除后应该插入到新的文档末尾
+      if (insertionOffset == originalDocumentLength) {
+        adjustedInsertionOffset = documentLength;
+      } else {
+        // 否则，确保插入位置在有效范围内
+        adjustedInsertionOffset =
+            adjustedInsertionOffset.clamp(0, documentLength);
+      }
 
+      // 执行插入操作
       controller.replaceText(
           adjustedInsertionOffset, 0, completeLineDelta, null,
           shouldNotifyListeners: true);
