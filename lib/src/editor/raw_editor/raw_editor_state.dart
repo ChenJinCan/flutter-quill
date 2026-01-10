@@ -1316,7 +1316,8 @@ class QuillRawEditorState extends EditorState
           // 这对于处理 embed 高度过大时的跳动特别重要
           const double scrollThreshold = 5.0;
           final currentOffset = _scrollController.offset;
-          final targetOffset = math.min(offset, _scrollController.position.maxScrollExtent);
+          final targetOffset =
+              math.min(offset, _scrollController.position.maxScrollExtent);
           if ((targetOffset - currentOffset).abs() > scrollThreshold) {
             _scrollController.jumpTo(targetOffset);
           }

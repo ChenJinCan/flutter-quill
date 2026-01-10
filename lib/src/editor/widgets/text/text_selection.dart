@@ -533,11 +533,17 @@ class _TextSelectionHandleOverlayState
 
     widget.dragOffsetNotifier?.value = combinedPosition;
     _dragPosition = details.globalPosition + Offset(0, -handleSize.height);
+
+    // 通知 RenderEditor 手柄拖动开始，设置原点为当前选择
+    widget.renderObject.handleHandleDragStart(widget.selection);
   }
 
   void _handleDragEnd(DragEndDetails details) {
     // when the drag is complete, we need to clear the drag offset
     widget.dragOffsetNotifier?.value = null;
+
+    // 通知 RenderEditor 手柄拖动结束
+    widget.renderObject.handleHandleDragEnd();
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
@@ -578,9 +584,68 @@ class _TextSelectionHandleOverlayState
         break;
       case _TextSelectionHandlePosition.end:
         // end handle始终控制extent位置
-        newSelection = widget.selection.copyWith(
-          extentOffset: position.offset,
-        );
+        // 但为了支持交叉后正确扩展，需要基于规范化范围进行更新
+        final currentSelection = widget.selection;
+        final currentMin = math.min(
+            currentSelection.baseOffset, currentSelection.extentOffset);
+        final currentMax = math.max(
+            currentSelection.baseOffset, currentSelection.extentOffset);
+        final currentExtent = currentSelection.extentOffset;
+
+        // 确定end手柄当前在范围的哪一端
+        final isExtentAtMin = currentExtent == currentMin;
+
+        // 根据拖动方向和当前位置，决定如何更新
+        if (position.offset > currentMax) {
+          // 拖动到更大的位置，扩展范围
+          // 保持最小值不变，更新最大值
+          if (isExtentAtMin) {
+            // end手柄在最小值位置，向右拖动时保持最小值不变，扩展最大值
+            newSelection = TextSelection(
+              baseOffset: currentMin,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          } else {
+            // end手柄在最大值位置，向右拖动时更新最大值
+            newSelection = currentSelection.copyWith(
+              extentOffset: position.offset,
+            );
+          }
+        } else if (position.offset < currentMin) {
+          // 拖动到更小的位置，扩展范围
+          // 保持最大值不变，更新最小值
+          if (isExtentAtMin) {
+            // end手柄在最小值位置，向左拖动时更新最小值
+            newSelection = currentSelection.copyWith(
+              extentOffset: position.offset,
+            );
+          } else {
+            // end手柄在最大值位置，向左拖动时保持最大值不变，扩展最小值
+            newSelection = TextSelection(
+              baseOffset: currentMax,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          }
+        } else {
+          // 拖动到中间位置，保持另一端不变，更新这一端
+          if (isExtentAtMin) {
+            // end手柄在最小值位置，拖动到中间时保持最大值不变
+            newSelection = TextSelection(
+              baseOffset: currentMax,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          } else {
+            // end手柄在最大值位置，拖动到中间时保持最小值不变
+            newSelection = TextSelection(
+              baseOffset: currentMin,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          }
+        }
         break;
     }
 

@@ -675,6 +675,17 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   /// Handles long press selection with smart word selection fallback
   void _handleLongPressSelection(Offset globalPosition) {
+    // Check if the position is in whitespace area first
+    if (_isPositionInWhitespace(globalPosition)) {
+      // If in whitespace area, just place cursor at the current position
+      // and don't try to select nearby words
+      renderEditor!.selectPositionAt(
+        from: globalPosition,
+        cause: SelectionChangedCause.longPress,
+      );
+      return;
+    }
+
     // First try to select word at the current position
     final position = renderEditor!.getPositionForOffset(globalPosition);
     final wordSelection = renderEditor!.selectWordAtPosition(position);
@@ -691,69 +702,69 @@ class _QuillEditorSelectionGestureDetectorBuilder
       renderEditor!._handleSelectionChange(
           wordSelection, SelectionChangedCause.longPress);
     } else {
-      // No valid word at current position, try to find nearby word
-      _selectNearbyWordOnLongPress(globalPosition);
+      // No valid word at current position, but since we're not in whitespace,
+      // just place cursor at the current position instead of searching nearby
+      renderEditor!.selectPositionAt(
+        from: globalPosition,
+        cause: SelectionChangedCause.longPress,
+      );
     }
   }
 
-  /// Attempts to select a word near the given position when long press
-  /// didn't select any meaningful text
-  void _selectNearbyWordOnLongPress(Offset globalPosition) {
+  /// Checks if the position at the given global offset is in whitespace area
+  /// (empty line or only whitespace characters)
+  bool _isPositionInWhitespace(Offset globalPosition) {
     final position = renderEditor!.getPositionForOffset(globalPosition);
     final documentText = _state.controller.document.toPlainText();
 
-    // Search for words in both directions from the current position
-    const searchRadius = 20; // Search within 20 characters
-
-    for (var radius = 1; radius <= searchRadius; radius++) {
-      // Try positions before the current position
-      final beforeOffset =
-          (position.offset - radius).clamp(0, documentText.length);
-      if (beforeOffset != position.offset) {
-        final beforePosition = TextPosition(offset: beforeOffset);
-        final beforeWord = renderEditor!.selectWordAtPosition(beforePosition);
-        final beforeText = beforeWord.textInside(documentText);
-
-        if (!beforeWord.isCollapsed &&
-            beforeText.trim().isNotEmpty &&
-            beforeText.trim() != '\n' &&
-            _isValidWord(beforeText)) {
-          renderEditor!._handleSelectionChange(
-              beforeWord, SelectionChangedCause.longPress);
-          return;
-        }
-      }
-
-      // Try positions after the current position
-      final afterOffset =
-          (position.offset + radius).clamp(0, documentText.length);
-      if (afterOffset != position.offset) {
-        final afterPosition = TextPosition(offset: afterOffset);
-        final afterWord = renderEditor!.selectWordAtPosition(afterPosition);
-        final afterText = afterWord.textInside(documentText);
-
-        if (!afterWord.isCollapsed &&
-            afterText.trim().isNotEmpty &&
-            afterText.trim() != '\n' &&
-            _isValidWord(afterText)) {
-          renderEditor!._handleSelectionChange(
-              afterWord, SelectionChangedCause.longPress);
-          return;
-        }
-      }
+    // If document is empty, it's whitespace
+    if (documentText.isEmpty || position.offset < 0) {
+      return true;
     }
 
-    // If no nearby word found, just place cursor at the current position
-    renderEditor!.selectPositionAt(
-      from: globalPosition,
-      cause: SelectionChangedCause.longPress,
-    );
-  }
+    // Check if position is beyond document length (at end of document)
+    if (position.offset >= documentText.length) {
+      // Check if the last part of document is whitespace
+      final lastPart = documentText.length > 10
+          ? documentText.substring(documentText.length - 10)
+          : documentText;
+      return lastPart.trim().isEmpty;
+    }
 
-  /// Checks if the given text represents a valid word (contains letters or numbers)
-  bool _isValidWord(String text) {
-    // Check if text contains at least one alphanumeric character
-    return RegExp(r'[a-zA-Z0-9\u4e00-\u9fa5]').hasMatch(text);
+    // Query the segment leaf node at this position
+    final result =
+        _state.controller.document.querySegmentLeafNode(position.offset);
+    final line = result.line;
+    final segmentLeaf = result.leaf;
+
+    // If line is null, it's whitespace
+    if (line == null) {
+      return true;
+    }
+
+    // If segmentLeaf is null and line length is 1, it's an empty line (only newline)
+    if (segmentLeaf == null && line.length == 1) {
+      return true;
+    }
+
+    // Check if the character at this position is whitespace
+    final char = documentText[position.offset];
+    // Check if it's whitespace (space, tab, newline, etc.)
+    if (char.trim().isEmpty) {
+      // Also check surrounding characters to ensure we're in a whitespace area
+      // Check a small range around the position
+      const checkRadius = 5;
+      final startOffset =
+          (position.offset - checkRadius).clamp(0, documentText.length);
+      final endOffset =
+          (position.offset + checkRadius + 1).clamp(0, documentText.length);
+      final surroundingText = documentText.substring(startOffset, endOffset);
+
+      // If surrounding text contains only whitespace, it's a whitespace area
+      return surroundingText.trim().isEmpty;
+    }
+
+    return false;
   }
 
   @override
@@ -932,10 +943,21 @@ class RenderEditor extends RenderEditableContainerBox
     selection = t;
     markNeedsPaint();
 
-    if (!_shiftPressed && !_isDragging) {
+    // 允许在手柄拖动时更新原点，或者在文本拖动结束后更新
+    if (!_shiftPressed && (!_isDragging || _isHandleDragging)) {
       // Only update extend selection origin if Shift key is not pressed and
-      // user is not dragging selection.
-      _extendSelectionOrigin = selection;
+      // user is not dragging selection (or is dragging handle).
+      // 在手柄拖动时，使用规范化后的选择范围作为原点
+      if (_isHandleDragging) {
+        final normalizedSelection = TextSelection(
+          baseOffset: math.min(selection.baseOffset, selection.extentOffset),
+          extentOffset: math.max(selection.baseOffset, selection.extentOffset),
+          affinity: selection.affinity,
+        );
+        _extendSelectionOrigin = normalizedSelection;
+      } else {
+        _extendSelectionOrigin = selection;
+      }
     }
   }
 
@@ -1064,6 +1086,7 @@ class RenderEditor extends RenderEditableContainerBox
   }
 
   bool _isDragging = false;
+  bool _isHandleDragging = false;
 
   void handleDragStart(DragStartDetails details) {
     _isDragging = true;
@@ -1080,7 +1103,30 @@ class RenderEditor extends RenderEditableContainerBox
 
   void handleDragEnd(DragEndDetails details) {
     _isDragging = false;
+    // 文本拖动结束后，更新原点为当前选择
+    if (!_isHandleDragging) {
+      _extendSelectionOrigin = selection;
+    }
     onSelectionCompleted();
+  }
+
+  /// Called when handle drag starts to set the origin for extend selection.
+  void handleHandleDragStart(TextSelection initialSelection) {
+    _isHandleDragging = true;
+    // 使用规范化后的选择范围作为原点（确保 start <= end）
+    final normalizedSelection = TextSelection(
+      baseOffset:
+          math.min(initialSelection.baseOffset, initialSelection.extentOffset),
+      extentOffset:
+          math.max(initialSelection.baseOffset, initialSelection.extentOffset),
+      affinity: initialSelection.affinity,
+    );
+    _extendSelectionOrigin = normalizedSelection;
+  }
+
+  /// Called when handle drag ends to clear the handle dragging state.
+  void handleHandleDragEnd() {
+    _isHandleDragging = false;
   }
 
   @override
@@ -1119,6 +1165,44 @@ class RenderEditor extends RenderEditableContainerBox
     onSelectionChanged(nextSelection, cause);
   }
 
+  /// Returns normalized origin range (start <= end) for extend selection.
+  /// If the origin is inconsistent with current selection, use current selection.
+  TextRange _getNormalizedOrigin() {
+    if (_extendSelectionOrigin == null) {
+      return TextRange(start: selection.start, end: selection.end);
+    }
+
+    // 获取当前选择的规范化范围
+    final currentNormalized = TextRange(
+      start: math.min(selection.baseOffset, selection.extentOffset),
+      end: math.max(selection.baseOffset, selection.extentOffset),
+    );
+
+    // 获取原点的规范化范围
+    final origin = _extendSelectionOrigin!;
+    final originNormalized = TextRange(
+      start: math.min(origin.baseOffset, origin.extentOffset),
+      end: math.max(origin.baseOffset, origin.extentOffset),
+    );
+
+    // 如果原点的规范化范围与当前选择的规范化范围一致，使用原点
+    // 否则，使用当前选择（说明选择已经改变，原点应该更新）
+    if (originNormalized.start == currentNormalized.start &&
+        originNormalized.end == currentNormalized.end) {
+      return originNormalized;
+    } else {
+      // 原点与当前选择不一致，使用当前选择并更新原点
+      if (_isHandleDragging) {
+        _extendSelectionOrigin = TextSelection(
+          baseOffset: currentNormalized.start,
+          extentOffset: currentNormalized.end,
+          affinity: selection.affinity,
+        );
+      }
+      return currentNormalized;
+    }
+  }
+
   /// Extends current selection to the position closest to specified offset.
   void extendSelection(Offset to, {required SelectionChangedCause cause}) {
     /// The below logic does not exactly match the native version because
@@ -1126,19 +1210,23 @@ class RenderEditor extends RenderEditableContainerBox
     assert(_extendSelectionOrigin != null);
     final position = getPositionForOffset(to);
 
-    if (position.offset < _extendSelectionOrigin!.baseOffset) {
+    // 确保 _extendSelectionOrigin 与当前选择一致
+    // 如果选择已经交叉，使用当前选择的规范化范围
+    final normalizedOrigin = _getNormalizedOrigin();
+
+    if (position.offset < normalizedOrigin.start) {
       _handleSelectionChange(
         TextSelection(
           baseOffset: position.offset,
-          extentOffset: _extendSelectionOrigin!.extentOffset,
+          extentOffset: normalizedOrigin.end,
           affinity: selection.affinity,
         ),
         cause,
       );
-    } else if (position.offset > _extendSelectionOrigin!.extentOffset) {
+    } else if (position.offset > normalizedOrigin.end) {
       _handleSelectionChange(
         TextSelection(
-          baseOffset: _extendSelectionOrigin!.baseOffset,
+          baseOffset: normalizedOrigin.start,
           extentOffset: position.offset,
           affinity: selection.affinity,
         ),
@@ -1414,8 +1502,8 @@ class RenderEditor extends RenderEditableContainerBox
 
     final lineHeight = child.preferredLineHeight(TextPosition(
         offset: selection.extentOffset - child.container.documentOffset));
-    final clampedLineHeight = lineHeight > maxLineHeightForScroll 
-        ? maxLineHeightForScroll 
+    final clampedLineHeight = lineHeight > maxLineHeightForScroll
+        ? maxLineHeightForScroll
         : lineHeight;
 
     final caretTop = endpoint.point.dy -
