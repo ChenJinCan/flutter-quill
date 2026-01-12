@@ -535,6 +535,8 @@ class _TextSelectionHandleOverlayState
     _dragPosition = details.globalPosition + Offset(0, -handleSize.height);
 
     // 通知 RenderEditor 手柄拖动开始，设置原点为当前选择
+    debugPrint(
+        '[HandleDrag] ${widget.position} handle drag START: base=${widget.selection.baseOffset}, extent=${widget.selection.extentOffset}, normalized=${widget.selection.start}～${widget.selection.end}');
     widget.renderObject.handleHandleDragStart(widget.selection);
   }
 
@@ -568,6 +570,16 @@ class _TextSelectionHandleOverlayState
 
     if (widget.selection.isCollapsed) {
       widget.onSelectionHandleChanged(TextSelection.fromPosition(position));
+      // 如果拖拽到相同位置（无法扩展选择）或文档末尾，清除放大镜
+      // 因为无法继续扩展选择，应该清除 dragOffsetNotifier
+      final documentLength = widget.renderObject.document.length;
+      final isAtSamePosition = position.offset == widget.selection.baseOffset;
+      final isAtDocumentEnd = position.offset >= documentLength;
+      if (isAtSamePosition || isAtDocumentEnd) {
+        debugPrint(
+            '[HandleDrag] ${widget.position} handle: collapsed (samePos=$isAtSamePosition, atEnd=$isAtDocumentEnd, offset=$position.offset, docLength=$documentLength), clearing magnifier');
+        widget.dragOffsetNotifier?.value = null;
+      }
       return;
     }
 
@@ -578,9 +590,65 @@ class _TextSelectionHandleOverlayState
     switch (widget.position) {
       case _TextSelectionHandlePosition.start:
         // start handle始终控制base位置
-        newSelection = widget.selection.copyWith(
-          baseOffset: position.offset,
-        );
+        // 但为了支持交叉后正确扩展，需要基于规范化范围进行更新
+        final currentSelection = widget.selection;
+        final currentMin = math.min(
+            currentSelection.baseOffset, currentSelection.extentOffset);
+        final currentMax = math.max(
+            currentSelection.baseOffset, currentSelection.extentOffset);
+        final currentBase = currentSelection.baseOffset;
+
+        // 确定start手柄当前在范围的哪一端
+        final isBaseAtMin = currentBase == currentMin;
+
+        // 根据拖动方向和当前位置，决定如何更新
+        // 当start手柄在最大值位置，向左拖动时，保持base不变，更新extent
+        // 当start手柄在最小值位置，向右拖动时，保持extent不变，更新base
+        if (position.offset > currentMax) {
+          // 拖动到更大的位置，扩展范围
+          if (isBaseAtMin) {
+            // start手柄在最小值位置，向右拖动时保持extent不变，扩展base
+            newSelection = currentSelection.copyWith(
+              baseOffset: position.offset,
+            );
+          } else {
+            // start手柄在最大值位置，向右拖动时保持extent不变，更新base
+            newSelection = currentSelection.copyWith(
+              baseOffset: position.offset,
+            );
+          }
+        } else if (position.offset < currentMin) {
+          // 拖动到更小的位置，扩展范围
+          if (isBaseAtMin) {
+            // start手柄在最小值位置，向左拖动时保持extent不变，更新base
+            newSelection = currentSelection.copyWith(
+              baseOffset: position.offset,
+            );
+          } else {
+            // start手柄在最大值位置，向左拖动时保持base不变，更新extent
+            // 这样才能得到期望的结果：base=732, extent=727, normalized=727～732
+            newSelection = TextSelection(
+              baseOffset: currentBase,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          }
+        } else {
+          // 拖动到中间位置，根据当前位置决定如何更新
+          if (isBaseAtMin) {
+            // start手柄在最小值位置，拖动到中间时保持extent不变，更新base
+            newSelection = currentSelection.copyWith(
+              baseOffset: position.offset,
+            );
+          } else {
+            // start手柄在最大值位置，拖动到中间时保持base不变，更新extent
+            newSelection = TextSelection(
+              baseOffset: currentBase,
+              extentOffset: position.offset,
+              affinity: currentSelection.affinity,
+            );
+          }
+        }
         break;
       case _TextSelectionHandlePosition.end:
         // end handle始终控制extent位置
@@ -652,6 +720,20 @@ class _TextSelectionHandleOverlayState
     // 防止在拖拽过程中创建collapsed selection，但允许短暂的重叠
     // 这样可以避免手柄在交叉时突然消失
     if (newSelection.isCollapsed) {
+      // 如果选择变为collapsed，检查是否拖拽到相同位置或文档末尾
+      final documentLength = widget.renderObject.document.length;
+      final isAtSamePosition = position.offset == newSelection.baseOffset;
+      final isAtDocumentEnd = position.offset >= documentLength;
+
+      // 如果拖拽到相同位置或文档末尾，清除放大镜
+      // 因为无法继续扩展选择，应该清除 dragOffsetNotifier
+      if (isAtSamePosition || isAtDocumentEnd) {
+        debugPrint(
+            '[HandleDrag] ${widget.position} handle: collapsed (samePos=$isAtSamePosition, atEnd=$isAtDocumentEnd, offset=$position.offset, docLength=$documentLength), clearing magnifier');
+        widget.dragOffsetNotifier?.value = null;
+        return;
+      }
+
       // 如果选择变为collapsed，我们仍然允许更新，
       // 但会在下一帧中调整为合理的选择
       final minimalSelection = TextSelection(
@@ -659,13 +741,22 @@ class _TextSelectionHandleOverlayState
         extentOffset: newSelection.baseOffset + 1,
       );
       // 确保不超出文档范围
-      final documentLength = widget.renderObject.document.length;
       if (minimalSelection.extentOffset <= documentLength) {
+        debugPrint(
+            '[HandleDrag] ${widget.position} handle: collapsed -> base=${minimalSelection.baseOffset}, extent=${minimalSelection.extentOffset}, normalized=${minimalSelection.start}～${minimalSelection.end}');
         widget.onSelectionHandleChanged(minimalSelection);
+      } else {
+        // 如果超出文档范围（拖拽到文档末尾），清除放大镜
+        // 因为无法创建有效的选择，应该清除 dragOffsetNotifier
+        debugPrint(
+            '[HandleDrag] ${widget.position} handle: collapsed at document end, clearing magnifier');
+        widget.dragOffsetNotifier?.value = null;
       }
       return;
     }
 
+    debugPrint(
+        '[HandleDrag] ${widget.position} handle: base=${newSelection.baseOffset}, extent=${newSelection.extentOffset}, normalized=${newSelection.start}～${newSelection.end}, target=${position.offset}');
     widget.onSelectionHandleChanged(newSelection);
   }
 

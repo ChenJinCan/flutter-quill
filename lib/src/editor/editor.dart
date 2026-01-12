@@ -943,6 +943,8 @@ class RenderEditor extends RenderEditableContainerBox
     selection = t;
     markNeedsPaint();
 
+    debugPrint('[setSelection] base=${t.baseOffset}, extent=${t.extentOffset}, normalized=${t.start}～${t.end}, isHandleDragging=$_isHandleDragging, isDragging=$_isDragging');
+
     // 允许在手柄拖动时更新原点，或者在文本拖动结束后更新
     if (!_shiftPressed && (!_isDragging || _isHandleDragging)) {
       // Only update extend selection origin if Shift key is not pressed and
@@ -955,8 +957,10 @@ class RenderEditor extends RenderEditableContainerBox
           affinity: selection.affinity,
         );
         _extendSelectionOrigin = normalizedSelection;
+        debugPrint('[setSelection] Origin updated (handle drag): base=${normalizedSelection.baseOffset}, extent=${normalizedSelection.extentOffset}, normalized=${normalizedSelection.start}～${normalizedSelection.end}');
       } else {
         _extendSelectionOrigin = selection;
+        debugPrint('[setSelection] Origin updated: base=${selection.baseOffset}, extent=${selection.extentOffset}, normalized=${selection.start}～${selection.end}');
       }
     }
   }
@@ -1122,6 +1126,8 @@ class RenderEditor extends RenderEditableContainerBox
       affinity: initialSelection.affinity,
     );
     _extendSelectionOrigin = normalizedSelection;
+    debugPrint('[handleHandleDragStart] base=${initialSelection.baseOffset}, extent=${initialSelection.extentOffset}, normalized=${initialSelection.start}～${initialSelection.end}');
+    debugPrint('[handleHandleDragStart] Origin set: base=${normalizedSelection.baseOffset}, extent=${normalizedSelection.extentOffset}, normalized=${normalizedSelection.start}～${normalizedSelection.end}');
   }
 
   /// Called when handle drag ends to clear the handle dragging state.
