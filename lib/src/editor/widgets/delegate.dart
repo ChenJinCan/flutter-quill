@@ -8,6 +8,7 @@ import '../../document/attribute.dart';
 import '../../document/nodes/leaf.dart';
 import '../editor.dart';
 import '../raw_editor/raw_editor.dart';
+import 'nearby_word_search.dart';
 import 'text/magnifier.dart';
 import 'text/text_selection.dart';
 
@@ -320,42 +321,20 @@ class EditorTextSelectionGestureDetectorBuilder {
 
     if (text.isEmpty) return;
 
-    // Search for the nearest word character within a reasonable range
-    const maxSearchDistance =
-        10; // Maximum characters to search in each direction
-
-    // First, try searching to the right
-    for (int i = 1;
-        i <= maxSearchDistance && position.offset + i < text.length;
-        i++) {
-      final newOffset = position.offset + i;
+    for (final newOffset in boundedNearbyWordSearchOffsets(
+      positionOffset: position.offset,
+      textLength: text.length,
+    )) {
       final char = text[newOffset];
       if (_isWordCharacter(char)) {
         final newPosition = TextPosition(offset: newOffset);
         final wordBoundary = renderEditor!.getWordBoundary(newPosition);
-        if (wordBoundary.isValid && !wordBoundary.isCollapsed) {
-          final wordText = text.substring(wordBoundary.start, wordBoundary.end);
-          if (wordText.trim().isNotEmpty) {
-            renderEditor!.onSelectionChanged(
-              TextSelection(
-                  baseOffset: wordBoundary.start,
-                  extentOffset: wordBoundary.end),
-              SelectionChangedCause.tap,
-            );
-            return;
-          }
-        }
-      }
-    }
-
-    // If no word found to the right, try searching to the left
-    for (int i = 1; i <= maxSearchDistance && position.offset - i >= 0; i++) {
-      final newOffset = position.offset - i;
-      final char = text[newOffset];
-      if (_isWordCharacter(char)) {
-        final newPosition = TextPosition(offset: newOffset);
-        final wordBoundary = renderEditor!.getWordBoundary(newPosition);
-        if (wordBoundary.isValid && !wordBoundary.isCollapsed) {
+        final isSafeBoundary = wordBoundary.isValid &&
+            !wordBoundary.isCollapsed &&
+            wordBoundary.start >= 0 &&
+            wordBoundary.end <= text.length &&
+            wordBoundary.start < wordBoundary.end;
+        if (isSafeBoundary) {
           final wordText = text.substring(wordBoundary.start, wordBoundary.end);
           if (wordText.trim().isNotEmpty) {
             renderEditor!.onSelectionChanged(

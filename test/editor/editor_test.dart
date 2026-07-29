@@ -20,6 +20,36 @@ void main() {
   });
 
   group('QuillEditor', () {
+    testWidgets(
+      'double tapping trailing editor space never indexes beyond the document',
+      (tester) async {
+        controller.document.insert(0, 'hello');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: QuillEditor.basic(
+                controller: controller,
+                config: const QuillEditorConfig(expands: true),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final editorRect = tester.getRect(find.byType(QuillEditor));
+        final trailingSpace = Offset(
+          editorRect.right - 8,
+          editorRect.top + 24,
+        );
+        await tester.tapAt(trailingSpace);
+        await tester.pump(const Duration(milliseconds: 80));
+        await tester.tapAt(trailingSpace);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('Keyboard entered text is stored in document', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
