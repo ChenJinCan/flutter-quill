@@ -774,8 +774,22 @@ class MarkdownShortcutInsertRule extends InsertRule {
     if (remainToNewline > 0) {
       result.retain(remainToNewline);
     }
-    // 对换行应用目标属性
-    result.retain(1, targetAttr.toJson());
+    // 对换行应用目标属性，并清除旧的排他块格式。
+    //
+    // 快捷输入直接构造 Delta，不会经过 ResolveLineFormatRule；如果当前行
+    // 已经是列表，再输入 `> `，仅叠加 blockquote 会留下
+    // `{list: ordered, blockquote: true}`，导致引用内仍绘制并续写编号。
+    final targetAttributes = targetAttr.toJson();
+    if (targetAttr.value != null &&
+        Attribute.exclusiveBlockKeys.contains(targetAttr.key)) {
+      for (final key in stylesHere.attributes.keys) {
+        if (key != targetAttr.key &&
+            Attribute.exclusiveBlockKeys.contains(key)) {
+          targetAttributes[key] = null;
+        }
+      }
+    }
+    result.retain(1, targetAttributes);
 
     return result;
   }

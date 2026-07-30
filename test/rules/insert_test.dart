@@ -5,6 +5,34 @@ import 'package:flutter_quill/src/rules/insert.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('MarkdownShortcutInsertRule', () {
+    test('quote shortcut replaces an ordered list and newline stays a quote',
+        () {
+      final document = Document.fromDelta(
+        Delta()
+          ..insert(
+            '>\n',
+            <String, dynamic>{Attribute.list.key: Attribute.ol.value},
+          ),
+      )
+        ..insert(1, ' ')
+        ..insert(0, '引用内容')
+        ..insert(4, '\n');
+
+      expect(
+        document.toDelta(),
+        Delta()
+          ..insert('引用内容')
+          ..insert(
+            '\n\n',
+            <String, dynamic>{
+              Attribute.blockQuote.key: Attribute.blockQuote.value,
+            },
+          ),
+      );
+    });
+  });
+
   group('PreserveInlineStylesRule', () {
     const rule = PreserveInlineStylesRule();
 

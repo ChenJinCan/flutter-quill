@@ -3,6 +3,32 @@ import 'package:flutter_quill/quill_delta.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('exclusive block normalization', () {
+    test('fromDelta keeps the last exclusive block format on a legacy line',
+        () {
+      final document = Document.fromDelta(
+        Delta()
+          ..insert('旧引用')
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.ol.value,
+            Attribute.align.key: Attribute.centerAlignment.value,
+            Attribute.blockQuote.key: Attribute.blockQuote.value,
+          }),
+      );
+
+      expect(document.toPlainText(), '旧引用\n');
+      expect(
+        document.toDelta(),
+        Delta()
+          ..insert('旧引用')
+          ..insert('\n', <String, dynamic>{
+            Attribute.align.key: Attribute.centerAlignment.value,
+            Attribute.blockQuote.key: Attribute.blockQuote.value,
+          }),
+      );
+    });
+  });
+
   group('collectStyle', () {
     test('No selection', () {
       final delta = Delta()

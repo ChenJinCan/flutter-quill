@@ -34,8 +34,8 @@ class Document {
   }
 
   /// Creates new document from provided `delta`.
-  Document.fromDelta(Delta delta) : _delta = delta {
-    loadDocument(delta);
+  Document.fromDelta(Delta delta) : _delta = _transform(delta) {
+    loadDocument(_delta);
   }
 
   /// Stores the plain text content of the entire document in memory for quick access.
@@ -496,11 +496,40 @@ class Document {
     final res = Delta();
     final ops = delta.toList();
     for (var i = 0; i < ops.length; i++) {
-      final op = ops[i];
+      final op = _normalizeExclusiveBlockFormats(ops[i]);
       res.push(op);
       _autoAppendNewlineAfterEmbeddable(i, ops, op, res, BlockEmbed.videoType);
     }
     return res;
+  }
+
+  static Operation _normalizeExclusiveBlockFormats(Operation op) {
+    final attributes = op.attributes;
+    if (!op.isInsert ||
+        op.data is! String ||
+        !(op.data as String).contains('\n') ||
+        attributes == null) {
+      return op;
+    }
+
+    final activeExclusiveKeys = attributes.entries
+        .where((entry) =>
+            entry.value != null &&
+            Attribute.exclusiveBlockKeys.contains(entry.key))
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    if (activeExclusiveKeys.length <= 1) {
+      return op;
+    }
+
+    // Attribute maps preserve insertion order. A malformed legacy Delta was
+    // produced by appending a new block format without removing the old one,
+    // so the last active exclusive key represents the user's latest action.
+    final retainedKey = activeExclusiveKeys.last;
+    final normalizedAttributes = Map<String, dynamic>.from(attributes)
+      ..removeWhere((key, _) =>
+          key != retainedKey && Attribute.exclusiveBlockKeys.contains(key));
+    return Operation.insert(op.data, normalizedAttributes);
   }
 
   static void _autoAppendNewlineAfterEmbeddable(

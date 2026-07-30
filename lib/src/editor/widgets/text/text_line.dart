@@ -1427,6 +1427,8 @@ class RenderEditableTextLine extends RenderEditableBox
 
     _body!.layout(innerConstraints, parentUsesSize: true);
 
+    var bodyOffsetY = 0.0;
+    var leadingOffsetY = 0.0;
     var contentHeight = _body!.size.height;
     if (_leading != null) {
       final leadingConstraints = innerConstraints.copyWith(
@@ -1434,16 +1436,27 @@ class RenderEditableTextLine extends RenderEditableBox
         maxWidth: indentWidth,
       );
       _leading!.layout(leadingConstraints, parentUsesSize: true);
-      contentHeight = math.max(contentHeight, _leading!.size.height);
+
+      // List markers and checkboxes belong to the first visual text line,
+      // even when the paragraph wraps. Center both children inside an
+      // alignment band tall enough for a custom leading or one text line.
+      final firstLineHeight = _body!.preferredLineHeight;
+      final alignmentHeight = math.max(firstLineHeight, _leading!.size.height);
+      bodyOffsetY = (alignmentHeight - firstLineHeight) / 2;
+      leadingOffsetY = (alignmentHeight - _leading!.size.height) / 2;
+      contentHeight = math.max(
+        bodyOffsetY + _body!.size.height,
+        leadingOffsetY + _leading!.size.height,
+      );
     }
 
     (_body!.parentData as BoxParentData).offset = Offset(
       _resolvedPadding!.left,
-      _resolvedPadding!.top + (contentHeight - _body!.size.height) / 2,
+      _resolvedPadding!.top + bodyOffsetY,
     );
     if (_leading != null) {
-      (_leading!.parentData as BoxParentData).offset = Offset(0,
-          _resolvedPadding!.top + (contentHeight - _leading!.size.height) / 2);
+      (_leading!.parentData as BoxParentData).offset =
+          Offset(0, _resolvedPadding!.top + leadingOffsetY);
     }
 
     size = constraints.constrain(Size(
