@@ -1426,22 +1426,29 @@ class RenderEditableTextLine extends RenderEditableBox
         : _resolvedPadding!.right;
 
     _body!.layout(innerConstraints, parentUsesSize: true);
-    (_body!.parentData as BoxParentData).offset =
-        Offset(_resolvedPadding!.left, _resolvedPadding!.top);
 
+    var contentHeight = _body!.size.height;
     if (_leading != null) {
       final leadingConstraints = innerConstraints.copyWith(
-          minWidth: indentWidth,
-          maxWidth: indentWidth,
-          maxHeight: _body!.size.height);
+        minWidth: indentWidth,
+        maxWidth: indentWidth,
+      );
       _leading!.layout(leadingConstraints, parentUsesSize: true);
-      (_leading!.parentData as BoxParentData).offset =
-          Offset(0, _resolvedPadding!.top);
+      contentHeight = math.max(contentHeight, _leading!.size.height);
+    }
+
+    (_body!.parentData as BoxParentData).offset = Offset(
+      _resolvedPadding!.left,
+      _resolvedPadding!.top + (contentHeight - _body!.size.height) / 2,
+    );
+    if (_leading != null) {
+      (_leading!.parentData as BoxParentData).offset = Offset(0,
+          _resolvedPadding!.top + (contentHeight - _leading!.size.height) / 2);
     }
 
     size = constraints.constrain(Size(
       _resolvedPadding!.left + _body!.size.width + _resolvedPadding!.right,
-      _resolvedPadding!.top + _body!.size.height + _resolvedPadding!.bottom,
+      _resolvedPadding!.top + contentHeight + _resolvedPadding!.bottom,
     ));
 
     _computeCaretPrototype();
