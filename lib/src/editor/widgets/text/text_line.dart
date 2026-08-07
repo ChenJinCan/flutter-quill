@@ -743,6 +743,7 @@ class EditableTextLine extends RenderObjectWidget {
     this.inlineCodeStyle,
     this.decoration, {
     super.key,
+    this.lineDecoration,
     this.onSwipeLeft,
     this.onSwipeRight,
     this.isAIProcessing = false,
@@ -763,6 +764,7 @@ class EditableTextLine extends RenderObjectWidget {
   final CursorCont cursorCont;
   final InlineCodeStyle inlineCodeStyle;
   final BoxDecoration? decoration;
+  final Widget? lineDecoration;
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
   final bool isAIProcessing;
@@ -825,7 +827,7 @@ class EditableTextLine extends RenderObjectWidget {
   }
 }
 
-enum TextLineSlot { leading, body }
+enum TextLineSlot { leading, body, lineDecoration }
 
 class RenderEditableTextLine extends RenderEditableBox
     with GestureHandlerMixin {
@@ -855,6 +857,7 @@ class RenderEditableTextLine extends RenderEditableBox
 
   RenderBox? _leading;
   RenderContentProxyBox? _body;
+  RenderBox? _lineDecoration;
   Line line;
   TextDirection textDirection;
   TextSelection textSelection;
@@ -969,6 +972,9 @@ class RenderEditableTextLine extends RenderEditableBox
     if (_body != null) {
       yield _body!;
     }
+    if (_lineDecoration != null) {
+      yield _lineDecoration!;
+    }
   }
 
   void setCursorCont(CursorCont c) {
@@ -1067,6 +1073,11 @@ class RenderEditableTextLine extends RenderEditableBox
 
   void setBody(RenderContentProxyBox? b) {
     _body = _updateChild(_body, b, TextLineSlot.body) as RenderContentProxyBox?;
+  }
+
+  void setLineDecoration(RenderBox? value) {
+    _lineDecoration =
+        _updateChild(_lineDecoration, value, TextLineSlot.lineDecoration);
   }
 
   void setInlineCodeStyle(InlineCodeStyle newStyle) {
@@ -1333,6 +1344,7 @@ class RenderEditableTextLine extends RenderEditableBox
 
     add(_leading, 'leading');
     add(_body, 'body');
+    add(_lineDecoration, 'lineDecoration');
     return value;
   }
 
@@ -1379,6 +1391,10 @@ class RenderEditableTextLine extends RenderEditableBox
     if (_body != null) {
       return _body!
               .getMinIntrinsicHeight(math.max(0, width - horizontalPadding)) +
+          (_lineDecoration?.getMinIntrinsicHeight(
+                math.max(0, width - horizontalPadding),
+              ) ??
+              0) +
           verticalPadding;
     }
     return verticalPadding;
@@ -1392,6 +1408,10 @@ class RenderEditableTextLine extends RenderEditableBox
     if (_body != null) {
       return _body!
               .getMaxIntrinsicHeight(math.max(0, width - horizontalPadding)) +
+          (_lineDecoration?.getMaxIntrinsicHeight(
+                math.max(0, width - horizontalPadding),
+              ) ??
+              0) +
           verticalPadding;
     }
     return verticalPadding;
@@ -1447,6 +1467,18 @@ class RenderEditableTextLine extends RenderEditableBox
       contentHeight = math.max(
         bodyOffsetY + _body!.size.height,
         leadingOffsetY + _leading!.size.height,
+      );
+    }
+
+    if (_lineDecoration != null) {
+      _lineDecoration!.layout(innerConstraints, parentUsesSize: true);
+      (_lineDecoration!.parentData as BoxParentData).offset = Offset(
+        _resolvedPadding!.left,
+        _resolvedPadding!.top + bodyOffsetY + _body!.size.height,
+      );
+      contentHeight = math.max(
+        contentHeight,
+        bodyOffsetY + _body!.size.height + _lineDecoration!.size.height,
       );
     }
 
@@ -1628,6 +1660,10 @@ class RenderEditableTextLine extends RenderEditableBox
         _paintSelection(context, bodyOffset);
       }
     }
+    if (_lineDecoration != null) {
+      final parentData = _lineDecoration!.parentData as BoxParentData;
+      context.paintChild(_lineDecoration!, effectiveOffset + parentData.offset);
+    }
   }
 
   void _paintSelection(PaintingContext context, Offset effectiveOffset) {
@@ -1660,6 +1696,16 @@ class RenderEditableTextLine extends RenderEditableBox
 
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    if (_lineDecoration != null) {
+      final parentData = _lineDecoration!.parentData as BoxParentData;
+      final isHit = result.addWithPaintOffset(
+        offset: parentData.offset,
+        position: position,
+        hitTest: (result, transformed) =>
+            _lineDecoration!.hitTest(result, position: transformed),
+      );
+      if (isHit) return true;
+    }
     if (_leading != null) {
       final childParentData = _leading!.parentData as BoxParentData;
       final isHit = result.addWithPaintOffset(
@@ -1879,6 +1925,7 @@ class _TextLineElement extends RenderObjectElement {
     super.mount(parent, newSlot);
     _mountChild(widget.leading, TextLineSlot.leading);
     _mountChild(widget.body, TextLineSlot.body);
+    _mountChild(widget.lineDecoration, TextLineSlot.lineDecoration);
   }
 
   @override
@@ -1887,6 +1934,7 @@ class _TextLineElement extends RenderObjectElement {
     assert(widget == newWidget);
     _updateChild(widget.leading, TextLineSlot.leading);
     _updateChild(widget.body, TextLineSlot.body);
+    _updateChild(widget.lineDecoration, TextLineSlot.lineDecoration);
   }
 
   @override
@@ -1928,6 +1976,9 @@ class _TextLineElement extends RenderObjectElement {
         break;
       case TextLineSlot.body:
         renderObject.setBody(child as RenderContentProxyBox?);
+        break;
+      case TextLineSlot.lineDecoration:
+        renderObject.setLineDecoration(child);
         break;
       default:
         throw UnimplementedError();

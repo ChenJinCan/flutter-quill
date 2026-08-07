@@ -5,6 +5,22 @@ import '../../style_widgets/checkbox_point.dart';
 
 typedef LeadingBlockNodeBuilder = Widget? Function(Node, LeadingConfig);
 
+/// Lets a custom list leading provide an additional widget below the editable
+/// body without consuming horizontal text width.
+class QuillLeadingWithLineDecoration extends StatelessWidget {
+  const QuillLeadingWithLineDecoration({
+    required this.leading,
+    required this.lineDecoration,
+    super.key,
+  });
+
+  final Widget leading;
+  final Widget lineDecoration;
+
+  @override
+  Widget build(BuildContext context) => leading;
+}
+
 /// This class contains all necessary values
 /// to build the leading for lists and codeblocks
 ///

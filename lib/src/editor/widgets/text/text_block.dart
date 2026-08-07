@@ -186,15 +186,22 @@ class EditableTextBlock extends StatelessWidget {
     var index = 0;
     for (final line in Iterable.castFrom<dynamic, Line>(block.children)) {
       index++;
+      final customLeading = _buildLeading(
+        context: context,
+        line: line,
+        index: index,
+        indentLevelCounts: indentLevelCounts,
+        count: count,
+      );
+      final leading = customLeading is QuillLeadingWithLineDecoration
+          ? customLeading.leading
+          : customLeading;
+      final lineDecoration = customLeading is QuillLeadingWithLineDecoration
+          ? customLeading.lineDecoration
+          : null;
       final editableTextLine = EditableTextLine(
           line,
-          _buildLeading(
-            context: context,
-            line: line,
-            index: index,
-            indentLevelCounts: indentLevelCounts,
-            count: count,
-          ),
+          leading,
           TextLine(
             line: line,
             textDirection: textDirection,
@@ -221,6 +228,7 @@ class EditableTextBlock extends StatelessWidget {
           cursorCont,
           styles!.inlineCode!,
           null,
+          lineDecoration: lineDecoration,
           onSwipeLeft: onSwipeLeft,
           onSwipeRight: onSwipeRight);
       final nodeTextDirection = getDirectionOfNode(line, textDirection);
