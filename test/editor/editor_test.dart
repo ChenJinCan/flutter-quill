@@ -21,6 +21,42 @@ void main() {
 
   group('QuillEditor', () {
     testWidgets(
+      'tapping below long multi-line content places the caret at document end',
+      (tester) async {
+        controller.document.insert(
+          0,
+          'first line\nsecond line stays long across the editor',
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: QuillEditor.basic(
+                  controller: controller,
+                  config: const QuillEditorConfig(minHeight: 400),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final editorRect = tester.getRect(find.byType(QuillEditor));
+        await tester.tapAt(
+          Offset(editorRect.left + 80, editorRect.bottom - 24),
+        );
+        await tester.pump();
+
+        expect(controller.selection.isCollapsed, isTrue);
+        expect(
+          controller.selection.extentOffset,
+          controller.document.length - 1,
+        );
+      },
+    );
+
+    testWidgets(
       'double tapping trailing editor space never indexes beyond the document',
       (tester) async {
         controller.document.insert(0, 'hello');

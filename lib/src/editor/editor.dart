@@ -1449,6 +1449,15 @@ class RenderEditor extends RenderEditableContainerBox
   @override
   TextPosition getPositionForOffset(Offset offset) {
     final local = globalToLocal(offset);
+    final trailingChild = lastChild;
+    if (trailingChild != null) {
+      final trailingParentData = trailingChild.parentData as BoxParentData;
+      final contentBottom =
+          trailingParentData.offset.dy + trailingChild.size.height;
+      if (local.dy > contentBottom) {
+        return TextPosition(offset: document.length - 1);
+      }
+    }
     final child = childAtOffset(local);
 
     final parentData = child.parentData as BoxParentData;
