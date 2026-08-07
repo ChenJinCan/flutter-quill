@@ -29,6 +29,7 @@ void main() {
         );
         await tester.pumpWidget(
           MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.iOS),
             home: Scaffold(
               body: Align(
                 alignment: Alignment.topCenter,
