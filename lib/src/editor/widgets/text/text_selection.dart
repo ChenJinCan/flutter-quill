@@ -101,6 +101,7 @@ class EditorTextSelectionOverlay {
     this.dragStartBehavior = DragStartBehavior.start,
     this.handlesVisible = false,
     this.dragOffsetNotifier,
+    this.scrollController,
   }) {
     // Clipboard status is only checked on first instance of
     // ClipboardStatusNotifier
@@ -163,6 +164,9 @@ class EditorTextSelectionOverlay {
   /// The delegate for manipulating the current selection in the owning
   /// text field.
   final TextSelectionDelegate selectionDelegate;
+
+  /// Controls the vertical viewport used while a selection handle is dragged.
+  final ScrollController? scrollController;
 
   /// {@macro flutter.widgets.EditableText.contextMenuBuilder}
   ///
@@ -297,6 +301,7 @@ class EditorTextSelectionOverlay {
           position: position,
           dragStartBehavior: dragStartBehavior,
           dragOffsetNotifier: dragOffsetNotifier,
+          scrollController: scrollController,
         ));
   }
 
@@ -326,20 +331,6 @@ class EditorTextSelectionOverlay {
     TextSelection? newSelection,
     _TextSelectionHandlePosition position,
   ) {
-    TextPosition textPosition;
-    switch (position) {
-      case _TextSelectionHandlePosition.start:
-        textPosition = newSelection != null
-            ? newSelection.base
-            : const TextPosition(offset: 0);
-        break;
-      case _TextSelectionHandlePosition.end:
-        textPosition = newSelection != null
-            ? newSelection.extent
-            : const TextPosition(offset: 0);
-        break;
-    }
-
     final currSelection = newSelection != null
         ? DragTextSelection(
             baseOffset: newSelection.baseOffset,
@@ -350,14 +341,38 @@ class EditorTextSelectionOverlay {
           )
         : null;
 
-    update(value.copyWith(
+    _updateForHandleDrag(value.copyWith(
       selection: currSelection,
       composing: TextRange.empty,
     ));
 
-    selectionDelegate
-      ..userUpdateTextEditingValue(value, SelectionChangedCause.drag)
-      ..bringIntoView(textPosition);
+    selectionDelegate.userUpdateTextEditingValue(
+      value,
+      SelectionChangedCause.drag,
+    );
+  }
+
+  void _updateForHandleDrag(TextEditingValue newValue) {
+    if (value == newValue) {
+      return;
+    }
+    value = newValue;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        _markSelectionHandlesNeedsBuild,
+      );
+    } else {
+      _markSelectionHandlesNeedsBuild();
+    }
+  }
+
+  void _markSelectionHandlesNeedsBuild([Duration? duration]) {
+    if (_handles == null) {
+      return;
+    }
+    _handles![0].markNeedsBuild();
+    _handles![1].markNeedsBuild();
   }
 
   void markNeedsBuild([Duration? duration]) {
@@ -423,6 +438,7 @@ class _TextSelectionHandleOverlay extends StatefulWidget {
     required this.selectionControls,
     this.dragStartBehavior = DragStartBehavior.start,
     this.dragOffsetNotifier,
+    this.scrollController,
   });
 
   final TextSelection selection;
@@ -435,6 +451,7 @@ class _TextSelectionHandleOverlay extends StatefulWidget {
   final TextSelectionControls selectionControls;
   final DragStartBehavior dragStartBehavior;
   final ValueNotifier<Offset?>? dragOffsetNotifier;
+  final ScrollController? scrollController;
 
   @override
   _TextSelectionHandleOverlayState createState() =>
@@ -463,8 +480,20 @@ class _TextSelectionHandleOverlay extends StatefulWidget {
 class _TextSelectionHandleOverlayState
     extends State<_TextSelectionHandleOverlay>
     with SingleTickerProviderStateMixin {
+  static const _edgeZone = 24.0;
+  static const _edgeScrollTick = Duration(milliseconds: 16);
+  static const _edgeScrollDelayTicks = 8;
+  static const _edgeScrollRampTicks = 15;
+  static const _maximumEdgeScrollSpeed = 120.0;
+
   // ignore: unused_field
   late Offset _dragPosition;
+
+  Timer? _edgeScrollTimer;
+  Offset? _latestDragGlobalPosition;
+  TextSelection? _dragSelection;
+  int _edgeScrollDirection = 0;
+  int _edgeScrollTicks = 0;
 
   late AnimationController _controller;
 
@@ -499,6 +528,7 @@ class _TextSelectionHandleOverlayState
 
   @override
   void dispose() {
+    _stopEdgeAutoScroll();
     widget._visibility.removeListener(_handleVisibilityChanged);
     if (widget._visibility is _CombinedVisibility) {
       (widget._visibility as _CombinedVisibility).dispose();
@@ -508,6 +538,9 @@ class _TextSelectionHandleOverlayState
   }
 
   void _handleDragStart(DragStartDetails details) {
+    _stopEdgeAutoScroll();
+    _latestDragGlobalPosition = details.globalPosition;
+    _dragSelection = widget.selection;
     // 计算文本位置和手柄信息
     final TextPosition textPosition;
     if (widget.position == _TextSelectionHandlePosition.start) {
@@ -534,13 +567,13 @@ class _TextSelectionHandleOverlayState
     widget.dragOffsetNotifier?.value = combinedPosition;
     _dragPosition = details.globalPosition + Offset(0, -handleSize.height);
 
-    // 通知 RenderEditor 手柄拖动开始，设置原点为当前选择
-    debugPrint(
-        '[HandleDrag] ${widget.position} handle drag START: base=${widget.selection.baseOffset}, extent=${widget.selection.extentOffset}, normalized=${widget.selection.start}～${widget.selection.end}');
     widget.renderObject.handleHandleDragStart(widget.selection);
   }
 
   void _handleDragEnd(DragEndDetails details) {
+    _stopEdgeAutoScroll();
+    _latestDragGlobalPosition = null;
+    _dragSelection = null;
     // when the drag is complete, we need to clear the drag offset
     widget.dragOffsetNotifier?.value = null;
 
@@ -550,8 +583,14 @@ class _TextSelectionHandleOverlayState
 
   void _handleDragUpdate(DragUpdateDetails details) {
     _dragPosition += details.delta;
-    final position =
-        widget.renderObject.getPositionForOffset(details.globalPosition);
+    _latestDragGlobalPosition = details.globalPosition;
+    _updateSelectionForGlobalPosition(details.globalPosition);
+    _updateEdgeAutoScroll();
+  }
+
+  void _updateSelectionForGlobalPosition(Offset globalPosition) {
+    final position = widget.renderObject.getPositionForOffset(globalPosition);
+    final currentSelection = _dragSelection ?? widget.selection;
 
     // 获取当前文本位置的光标位置
     final caretRect = widget.renderObject.getLocalRectForCaret(position);
@@ -562,22 +601,20 @@ class _TextSelectionHandleOverlayState
 
     // 组合位置：水平使用拖拽位置，垂直使用光标位置
     final combinedPosition = Offset(
-      details.globalPosition.dx, // 水平位置使用拖拽位置
+      globalPosition.dx, // 水平位置使用拖拽位置
       caretGlobalPosition.dy, // 垂直位置使用光标位置
     );
 
     widget.dragOffsetNotifier?.value = combinedPosition;
 
-    if (widget.selection.isCollapsed) {
-      widget.onSelectionHandleChanged(TextSelection.fromPosition(position));
+    if (currentSelection.isCollapsed) {
+      _publishSelection(TextSelection.fromPosition(position));
       // 如果拖拽到相同位置（无法扩展选择）或文档末尾，清除放大镜
       // 因为无法继续扩展选择，应该清除 dragOffsetNotifier
       final documentLength = widget.renderObject.document.length;
-      final isAtSamePosition = position.offset == widget.selection.baseOffset;
+      final isAtSamePosition = position.offset == currentSelection.baseOffset;
       final isAtDocumentEnd = position.offset >= documentLength;
       if (isAtSamePosition || isAtDocumentEnd) {
-        debugPrint(
-            '[HandleDrag] ${widget.position} handle: collapsed (samePos=$isAtSamePosition, atEnd=$isAtDocumentEnd, offset=$position.offset, docLength=$documentLength), clearing magnifier');
         widget.dragOffsetNotifier?.value = null;
       }
       return;
@@ -591,7 +628,6 @@ class _TextSelectionHandleOverlayState
       case _TextSelectionHandlePosition.start:
         // start handle始终控制base位置
         // 但为了支持交叉后正确扩展，需要基于规范化范围进行更新
-        final currentSelection = widget.selection;
         final currentMin = math.min(
             currentSelection.baseOffset, currentSelection.extentOffset);
         final currentMax = math.max(
@@ -653,7 +689,6 @@ class _TextSelectionHandleOverlayState
       case _TextSelectionHandlePosition.end:
         // end handle始终控制extent位置
         // 但为了支持交叉后正确扩展，需要基于规范化范围进行更新
-        final currentSelection = widget.selection;
         final currentMin = math.min(
             currentSelection.baseOffset, currentSelection.extentOffset);
         final currentMax = math.max(
@@ -728,8 +763,6 @@ class _TextSelectionHandleOverlayState
       // 如果拖拽到相同位置或文档末尾，清除放大镜
       // 因为无法继续扩展选择，应该清除 dragOffsetNotifier
       if (isAtSamePosition || isAtDocumentEnd) {
-        debugPrint(
-            '[HandleDrag] ${widget.position} handle: collapsed (samePos=$isAtSamePosition, atEnd=$isAtDocumentEnd, offset=$position.offset, docLength=$documentLength), clearing magnifier');
         widget.dragOffsetNotifier?.value = null;
         return;
       }
@@ -742,22 +775,126 @@ class _TextSelectionHandleOverlayState
       );
       // 确保不超出文档范围
       if (minimalSelection.extentOffset <= documentLength) {
-        debugPrint(
-            '[HandleDrag] ${widget.position} handle: collapsed -> base=${minimalSelection.baseOffset}, extent=${minimalSelection.extentOffset}, normalized=${minimalSelection.start}～${minimalSelection.end}');
-        widget.onSelectionHandleChanged(minimalSelection);
+        _publishSelection(minimalSelection);
       } else {
         // 如果超出文档范围（拖拽到文档末尾），清除放大镜
         // 因为无法创建有效的选择，应该清除 dragOffsetNotifier
-        debugPrint(
-            '[HandleDrag] ${widget.position} handle: collapsed at document end, clearing magnifier');
         widget.dragOffsetNotifier?.value = null;
       }
       return;
     }
 
-    debugPrint(
-        '[HandleDrag] ${widget.position} handle: base=${newSelection.baseOffset}, extent=${newSelection.extentOffset}, normalized=${newSelection.start}～${newSelection.end}, target=${position.offset}');
-    widget.onSelectionHandleChanged(newSelection);
+    _publishSelection(newSelection);
+  }
+
+  void _publishSelection(TextSelection selection) {
+    final currentSelection = _dragSelection ?? widget.selection;
+    if (selection == currentSelection) {
+      return;
+    }
+    _dragSelection = selection;
+    widget.onSelectionHandleChanged(selection);
+  }
+
+  void _updateEdgeAutoScroll() {
+    final edge = _edgeScrollState();
+    if (edge == null || edge.direction == 0) {
+      _stopEdgeAutoScroll();
+      return;
+    }
+
+    if (_edgeScrollDirection != edge.direction) {
+      _edgeScrollDirection = edge.direction;
+      _edgeScrollTicks = 0;
+    }
+    _edgeScrollTimer ??=
+        Timer.periodic(_edgeScrollTick, (_) => _performEdgeAutoScroll());
+  }
+
+  void _performEdgeAutoScroll() {
+    final edge = _edgeScrollState();
+    final controller = widget.scrollController;
+    if (!mounted ||
+        edge == null ||
+        edge.direction == 0 ||
+        controller == null ||
+        !controller.hasClients) {
+      _stopEdgeAutoScroll();
+      return;
+    }
+
+    if (_edgeScrollDirection != edge.direction) {
+      _edgeScrollDirection = edge.direction;
+      _edgeScrollTicks = 0;
+      return;
+    }
+
+    _edgeScrollTicks += 1;
+    if (_edgeScrollTicks <= _edgeScrollDelayTicks) {
+      return;
+    }
+
+    final ramp =
+        ((_edgeScrollTicks - _edgeScrollDelayTicks) / _edgeScrollRampTicks)
+            .clamp(0.0, 1.0);
+    final pixelsPerSecond = _maximumEdgeScrollSpeed * edge.depth * ramp;
+    final delta = edge.direction *
+        pixelsPerSecond *
+        _edgeScrollTick.inMicroseconds /
+        Duration.microsecondsPerSecond;
+    final position = controller.position;
+    final target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == position.pixels) {
+      _stopEdgeAutoScroll();
+      return;
+    }
+
+    controller.jumpTo(target);
+    final dragPosition = _latestDragGlobalPosition;
+    if (dragPosition != null) {
+      _updateSelectionForGlobalPosition(dragPosition);
+    }
+  }
+
+  ({int direction, double depth})? _edgeScrollState() {
+    final controller = widget.scrollController;
+    final dragPosition = _latestDragGlobalPosition;
+    if (controller == null || !controller.hasClients || dragPosition == null) {
+      return null;
+    }
+
+    final notificationContext = controller.position.context.notificationContext;
+    final viewport = notificationContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) {
+      return null;
+    }
+    final viewportRect = viewport.localToGlobal(Offset.zero) & viewport.size;
+    if (dragPosition.dy < viewportRect.top + _edgeZone) {
+      return (
+        direction: -1,
+        depth: ((viewportRect.top + _edgeZone - dragPosition.dy) / _edgeZone)
+            .clamp(0.0, 1.0),
+      );
+    }
+    if (dragPosition.dy > viewportRect.bottom - _edgeZone) {
+      return (
+        direction: 1,
+        depth:
+            ((dragPosition.dy - (viewportRect.bottom - _edgeZone)) / _edgeZone)
+                .clamp(0.0, 1.0),
+      );
+    }
+    return (direction: 0, depth: 0);
+  }
+
+  void _stopEdgeAutoScroll() {
+    _edgeScrollTimer?.cancel();
+    _edgeScrollTimer = null;
+    _edgeScrollDirection = 0;
+    _edgeScrollTicks = 0;
   }
 
   void _handleTap() {

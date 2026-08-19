@@ -82,6 +82,11 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 手势配置
   GestureConfig get gestureConfig => const GestureConfig();
 
+  /// Local content bounds used by drag and swipe-selection backgrounds.
+  /// Text lines override this so asymmetric editor padding does not make the
+  /// distance above and below the glyphs look different.
+  Rect get swipeEffectLocalBounds => Offset.zero & size;
+
   /// 是否有焦点
   bool get hasFocus;
 
@@ -839,12 +844,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
         ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
 
       final dragRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx - 2.0,
-          effectiveOffset.dy,
-          size.width + 4.0,
-          size.height,
-        ),
+        swipeEffectLocalBounds.shift(effectiveOffset),
         const Radius.circular(4),
       );
       context.canvas.drawRRect(dragRRect, dragPaint);
@@ -855,12 +855,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       final selectedPaint = Paint()
         ..color = const Color(0xFF2196F3).withValues(alpha: 0.2);
       final selectedRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          effectiveOffset.dx - 2.0,
-          effectiveOffset.dy,
-          size.width + 4.0,
-          size.height,
-        ),
+        swipeEffectLocalBounds.shift(effectiveOffset),
         const Radius.circular(4),
       );
       context.canvas.drawRRect(selectedRRect, selectedPaint);

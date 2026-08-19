@@ -28,7 +28,7 @@ class SwipeStateManager {
   SwipeableComponent? _currentSwipingComponent;
 
   /// 当前选中的组件（多选支持）
-  Set<SwipeableComponent> _selectedComponents = {};
+  final Set<SwipeableComponent> _selectedComponents = {};
 
   /// 向后兼容：返回第一个选中的组件
   SwipeableComponent? get _selectedComponent =>
@@ -152,8 +152,6 @@ class SwipeStateManager {
 
   /// 滚动事件监听器 - 在滚动时重置所有滑动状态
   void _onScrollChanged() {
-    debugPrint('SwipeStateManager: 检测到滚动，清除所有组件状态');
-
     if (isScrollingForActionSheet) {
       return;
     }
@@ -421,20 +419,6 @@ class SwipeStateManager {
       _currentSwipingComponent!.resetSwipe();
     }
 
-    // 清除之前的选中状态（如果不是当前组件）
-    if (_selectedComponents.isNotEmpty &&
-        !_selectedComponents.contains(component)) {
-      // 创建副本以避免在遍历时并发修改错误
-      final componentsToClear =
-          Set<SwipeableComponent>.from(_selectedComponents);
-      for (final selectedComponent in componentsToClear) {
-        if (selectedComponent != component) {
-          selectedComponent.setSelected(false);
-        }
-      }
-      _selectedComponents.removeWhere((c) => c != component);
-    }
-
     // 设置当前滑动组件
     _currentSwipingComponent = component;
 
@@ -497,6 +481,20 @@ class SwipeStateManager {
     return Set.from(_selectedComponents);
   }
 
+  /// Selected component ranges sorted by their position in the document.
+  List<({int offset, int length})> get selectedDocumentRanges {
+    final ranges = _selectedComponents
+        .map(
+          (component) => (
+            offset: component.documentOffset,
+            length: component.documentLength,
+          ),
+        )
+        .toList()
+      ..sort((a, b) => a.offset.compareTo(b.offset));
+    return List.unmodifiable(ranges);
+  }
+
   /// 清除选中状态
   void clearSelection({bool triggerCallback = true}) {
     // 清除所有选中组件
@@ -506,7 +504,9 @@ class SwipeStateManager {
     for (final component in componentsToClear) {
       try {
         component.setSelected(false);
-      } catch (e) {}
+      } catch (e) {
+        // The render object may already have detached during editor teardown.
+      }
 
       // 触发组件取消选中回调
       if (triggerCallback) {

@@ -5,8 +5,31 @@ import 'package:flutter_quill/src/rules/insert.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('plain new line', () {
+    test('enter after a checklist starts an unformatted paragraph', () {
+      const text = '待办事项';
+      final document = Document.fromDelta(
+        Delta()
+          ..insert(text, <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.unchecked.value,
+          }),
+      )..insert(text.length, '\n');
+
+      expect(
+        document.toDelta(),
+        Delta()
+          ..insert(text, <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.unchecked.value,
+          })
+          ..insert('\n'),
+      );
+    });
+  });
+
   group('MarkdownShortcutInsertRule', () {
-    test('quote shortcut replaces an ordered list and newline stays a quote',
+    test('quote shortcut replaces an ordered list and Enter starts plain text',
         () {
       final document = Document.fromDelta(
         Delta()
@@ -23,12 +46,10 @@ void main() {
         document.toDelta(),
         Delta()
           ..insert('引用内容')
-          ..insert(
-            '\n\n',
-            <String, dynamic>{
-              Attribute.blockQuote.key: Attribute.blockQuote.value,
-            },
-          ),
+          ..insert('\n', <String, dynamic>{
+            Attribute.blockQuote.key: Attribute.blockQuote.value,
+          })
+          ..insert('\n'),
       );
     });
   });

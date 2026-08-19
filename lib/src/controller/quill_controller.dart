@@ -553,6 +553,160 @@ class QuillController extends ChangeNotifier {
     return false;
   }
 
+  /// Copies or cuts multiple document ranges as one clipboard payload.
+  ///
+  /// Ranges are normalized into document order. Overlapping and touching
+  /// ranges are merged so every character is copied or deleted once. A cut is
+  /// composed as one document change, which keeps undo atomic.
+  @experimental
+  bool clipboardRanges(
+    Iterable<TextRange> ranges, {
+    required bool copy,
+  }) {
+    final documentLength = document.length;
+    final normalized = ranges
+        .map(
+          (range) => TextRange(
+            start: range.start.clamp(0, documentLength),
+            end: range.end.clamp(0, documentLength),
+          ),
+        )
+        .where((range) => range.start < range.end)
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    if (normalized.isEmpty || (!copy && readOnly)) return false;
+
+    final merged = <TextRange>[];
+    for (final range in normalized) {
+      if (merged.isEmpty || range.start > merged.last.end) {
+        merged.add(range);
+        continue;
+      }
+      final previous = merged.removeLast();
+      merged.add(
+        TextRange(
+          start: previous.start,
+          end: math.max(previous.end, range.end),
+        ),
+      );
+    }
+
+    copiedImageUrl = null;
+    _pastePlainText = merged
+        .map(
+          (range) => document.getPlainText(
+            range.start,
+            range.end - range.start,
+            includeEmbeds: true,
+          ),
+        )
+        .join();
+    _pasteDelta = merged.fold<Delta>(
+      Delta(),
+      (delta, range) =>
+          delta.concat(document.toDelta().slice(range.start, range.end)),
+    );
+    _pasteStyleAndEmbed = <OffsetValue>[];
+    Clipboard.setData(ClipboardData(text: _pastePlainText));
+
+    if (copy) return true;
+
+    final deletion = Delta();
+    var cursor = 0;
+    for (final range in merged) {
+      final preservesTerminalNewline = range.end == documentLength;
+      final deletionStart = preservesTerminalNewline && range.start > 0
+          ? range.start - 1
+          : range.start;
+      final deletionEnd = preservesTerminalNewline
+          ? math.max(deletionStart, documentLength - 1)
+          : range.end;
+      if (deletionStart > cursor) {
+        deletion.retain(deletionStart - cursor);
+      }
+      if (deletionEnd > deletionStart) {
+        deletion.delete(deletionEnd - deletionStart);
+      }
+      cursor = deletionEnd;
+    }
+    final collapseOffset = merged.first.start;
+    updateSelection(
+      TextSelection.collapsed(offset: collapseOffset),
+      ChangeSource.local,
+      shouldNotifyListeners: false,
+    );
+    compose(
+      deletion,
+      TextSelection.collapsed(offset: collapseOffset),
+      ChangeSource.local,
+    );
+    return true;
+  }
+
+  /// Deletes multiple document ranges as one undoable edit without changing
+  /// the clipboard payload.
+  @experimental
+  bool deleteRanges(Iterable<TextRange> ranges) {
+    if (readOnly) return false;
+    final documentLength = document.length;
+    final normalized = ranges
+        .map(
+          (range) => TextRange(
+            start: range.start.clamp(0, documentLength),
+            end: range.end.clamp(0, documentLength),
+          ),
+        )
+        .where((range) => range.start < range.end)
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    if (normalized.isEmpty) return false;
+
+    final merged = <TextRange>[];
+    for (final range in normalized) {
+      if (merged.isEmpty || range.start > merged.last.end) {
+        merged.add(range);
+        continue;
+      }
+      final previous = merged.removeLast();
+      merged.add(
+        TextRange(
+          start: previous.start,
+          end: math.max(previous.end, range.end),
+        ),
+      );
+    }
+
+    final deletion = Delta();
+    var cursor = 0;
+    for (final range in merged) {
+      final preservesTerminalNewline = range.end == documentLength;
+      final deletionStart = preservesTerminalNewline && range.start > 0
+          ? range.start - 1
+          : range.start;
+      final deletionEnd = preservesTerminalNewline
+          ? math.max(deletionStart, documentLength - 1)
+          : range.end;
+      if (deletionStart > cursor) {
+        deletion.retain(deletionStart - cursor);
+      }
+      if (deletionEnd > deletionStart) {
+        deletion.delete(deletionEnd - deletionStart);
+      }
+      cursor = deletionEnd;
+    }
+    updateSelection(
+      TextSelection.collapsed(offset: merged.first.start),
+      ChangeSource.local,
+      shouldNotifyListeners: false,
+    );
+    compose(
+      deletion,
+      TextSelection.collapsed(offset: merged.first.start),
+      ChangeSource.local,
+    );
+    return true;
+  }
+
   /// Returns whether paste operation was handled here.
   /// [updateEditor] is called if paste operation was successful.
   @experimental

@@ -23,6 +23,57 @@ abstract class InsertRule extends Rule {
   }
 }
 
+/// Keeps the current line's block attributes on that line while making the
+/// paragraph created by Enter plain. Pasted multi-line content continues to
+/// use the normal block-preservation rules below.
+@immutable
+class StartUnformattedLineOnNewLineRule extends InsertRule {
+  const StartUnformattedLineOnNewLineRule();
+
+  @override
+  Delta? applyRule(
+    Document document,
+    int index, {
+    int? len,
+    Object? data,
+    Attribute? attribute,
+  }) {
+    if (data != '\n' || (len ?? 0) != 0) {
+      return null;
+    }
+
+    final line = document.queryChild(index).node;
+    if (line == null) {
+      return null;
+    }
+
+    final lineStart = line.offset;
+    final newlineOffset = lineStart + line.length - 1;
+    final collectedStyle = document.collectStyle(newlineOffset, 1);
+    final lineAttributes = <String, dynamic>{
+      for (final attribute in collectedStyle.attributes.values)
+        if (!attribute.isInline) attribute.key: attribute.value,
+    };
+    if (lineAttributes.isEmpty) {
+      return null;
+    }
+    if (index == lineStart) {
+      return Delta()
+        ..retain(index)
+        ..insert('\n');
+    }
+
+    final clearedAttributes = <String, dynamic>{
+      for (final key in lineAttributes.keys) key: null,
+    };
+    return Delta()
+      ..retain(index)
+      ..insert('\n', lineAttributes)
+      ..retain(newlineOffset - index)
+      ..retain(1, clearedAttributes);
+  }
+}
+
 /// Preserves line format when user splits the line into two.
 ///
 /// This rule ignores scenarios when the line is split on its edge, meaning

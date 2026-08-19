@@ -70,8 +70,8 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
     // 限制用于滚动计算的行高，避免 embed 高度过大时导致跳动
     const double maxLineHeightForScroll = 60.0;
     final preferredHeight = renderEditor.preferredLineHeight(position);
-    final clampedPreferredHeight = preferredHeight > maxLineHeightForScroll 
-        ? maxLineHeightForScroll 
+    final clampedPreferredHeight = preferredHeight > maxLineHeightForScroll
+        ? maxLineHeightForScroll
         : preferredHeight;
     final expandedRect = Rect.fromCenter(
       center: rect.center,
@@ -113,6 +113,16 @@ mixin RawEditorStateSelectionDelegateMixin on EditorState
   @override
   void userUpdateTextEditingValue(
       TextEditingValue value, SelectionChangedCause cause) {
+    if (cause == SelectionChangedCause.drag) {
+      if (value.selection == widget.controller.selection) {
+        return;
+      }
+      widget.controller.updateSelection(
+        value.selection,
+        ChangeSource.local,
+      );
+      return;
+    }
     textEditingValue = value;
   }
 

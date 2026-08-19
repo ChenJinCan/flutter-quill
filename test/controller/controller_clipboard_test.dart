@@ -76,6 +76,86 @@ void main() {
       expect(controller.document.length, 6,
           reason: 'Cut not permitted on readOnly document');
     });
+
+    test('clipboardRanges copies disjoint lines in document order', () {
+      controller
+        ..replaceText(0, 4, 'first\nsecond\nthird', null)
+        ..formatText(0, 5, Attribute.bold)
+        ..formatText(13, 5, Attribute.italic);
+
+      expect(
+        controller.clipboardRanges(
+          const [
+            TextRange(start: 13, end: 19),
+            TextRange(start: 0, end: 6),
+          ],
+          copy: true,
+        ),
+        true,
+      );
+      expect(controller.pastePlainText, 'first\nthird\n');
+      expect(
+        controller.pasteDelta,
+        Delta()
+          ..insert('first', {'bold': true})
+          ..insert('\n')
+          ..insert('third', {'italic': true})
+          ..insert('\n'),
+      );
+      expect(controller.document.toPlainText(), 'first\nsecond\nthird\n');
+    });
+
+    test('clipboardRanges cuts disjoint lines as one undoable edit', () {
+      controller = QuillController(
+        document: Document.fromDelta(
+          Delta()..insert('first\nsecond\nthird\n'),
+        ),
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+
+      expect(
+        controller.clipboardRanges(
+          const [
+            TextRange(start: 0, end: 6),
+            TextRange(start: 13, end: 19),
+          ],
+          copy: false,
+        ),
+        true,
+      );
+      expect(controller.document.toPlainText(), 'second\n');
+      expect(controller.selection, const TextSelection.collapsed(offset: 0));
+
+      controller.undo();
+      expect(controller.document.toPlainText(), 'first\nsecond\nthird\n');
+    });
+
+    test('deleteRanges removes disjoint lines without replacing clipboard', () {
+      controller = QuillController(
+        document: Document.fromDelta(
+          Delta()..insert('first\nsecond\nthird\n'),
+        ),
+        selection: const TextSelection.collapsed(offset: 0),
+      )
+        ..updateSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 5),
+          ChangeSource.local,
+        )
+        ..clipboardSelection(true);
+      expect(controller.pastePlainText, 'first');
+
+      expect(
+        controller.deleteRanges(
+          const [
+            TextRange(start: 0, end: 6),
+            TextRange(start: 13, end: 19),
+          ],
+        ),
+        true,
+      );
+      expect(controller.document.toPlainText(), 'second\n');
+      expect(controller.pastePlainText, 'first');
+    });
   });
 
   bool pasteUsingPlainOrDelta(

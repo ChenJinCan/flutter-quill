@@ -1510,6 +1510,21 @@ class RenderEditableTextLine extends RenderEditableBox
       );
 
   @override
+  Rect get swipeEffectLocalBounds {
+    final bodyOffset = _body!.parentData as BoxParentData;
+    const verticalInset = 2.0;
+    return Rect.fromLTWH(
+      -2,
+      math.max(0, bodyOffset.offset.dy - verticalInset),
+      size.width + 4,
+      math.min(
+        size.height,
+        _body!.size.height + verticalInset * 2,
+      ),
+    );
+  }
+
+  @override
   void paint(PaintingContext context, Offset offset) {
     // 使用混入类的绘制效果方法
     paintSwipeEffects(context, offset);

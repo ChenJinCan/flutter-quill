@@ -58,6 +58,7 @@ class Rules {
     ResolveImageFormatRule(),
     InsertEmbedsRule(),
     AutoExitBlockRule(),
+    StartUnformattedLineOnNewLineRule(),
     PreserveBlockStyleOnInsertRule(),
     PreserveLineStyleOnSplitRule(),
     ResetLineFormatOnNewLineRule(),

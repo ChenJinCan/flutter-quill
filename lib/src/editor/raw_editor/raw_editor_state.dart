@@ -1,6 +1,6 @@
 // ignore_for_file: cascade_invocations
 
-import 'dart:async' show StreamSubscription;
+import 'dart:async' show StreamSubscription, Timer;
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:math' as math;
 import 'dart:ui' as ui hide TextStyle;
@@ -57,6 +57,7 @@ class QuillRawEditorState extends EditorState
   KeyboardVisibilityController? _keyboardVisibilityController;
   StreamSubscription<bool>? _keyboardVisibilitySubscription;
   bool _keyboardVisible = false;
+  Timer? _keyboardMetricsCaretTimer;
 
   // Selection overlay
   @override
@@ -520,9 +521,9 @@ class QuillRawEditorState extends EditorState
       requestKeyboard();
     }
 
-    if (cause == SelectionChangedCause.drag) {
-      // When user updates the selection while dragging make sure to
-      // bring the updated position (base or extent) into view.
+    if (cause == SelectionChangedCause.drag && !renderEditor.isHandleDragging) {
+      // Keep mouse-drag selection visible. Selection handles use their own
+      // delayed, speed-limited edge auto-scroll instead of jumping here.
       if (oldSelection.baseOffset != selection.baseOffset) {
         bringIntoView(selection.base);
       } else if (oldSelection.extentOffset != selection.extentOffset) {
@@ -1105,12 +1106,21 @@ class QuillRawEditorState extends EditorState
     super.didChangeMetrics();
 
     if (widget.config.focusNode.hasFocus) {
-      _showCaretOnScreen();
+      _keyboardMetricsCaretTimer?.cancel();
+      _keyboardMetricsCaretTimer = Timer(
+        const Duration(milliseconds: 80),
+        () {
+          if (mounted && widget.config.focusNode.hasFocus) {
+            _showCaretOnScreen();
+          }
+        },
+      );
     }
   }
 
   @override
   void dispose() {
+    _keyboardMetricsCaretTimer?.cancel();
     SwipeStateManager().clearCurrentSwipingComponent();
     WidgetsBinding.instance.removeObserver(this);
     closeConnectionIfNeeded();
@@ -1155,12 +1165,19 @@ class QuillRawEditorState extends EditorState
     });
   }
 
+  bool _handleDragFrameUpdateScheduled = false;
+
   void _didChangeTextEditingValue([bool ignoreFocus = false]) {
     if (kIsWeb) {
       _onChangeTextEditingValue(ignoreFocus);
       if (!ignoreFocus) {
         requestKeyboard();
       }
+      return;
+    }
+
+    if (!ignoreFocus && renderEditor.isHandleDragging) {
+      _updateHandleDragSelection();
       return;
     }
 
@@ -1179,12 +1196,44 @@ class QuillRawEditorState extends EditorState
         .stopCurrentVerticalRunIfSelectionChanges();
   }
 
+  void _updateHandleDragSelection() {
+    renderEditor.setSelection(controller.selection);
+    _shortcutActionsManager.adjacentLineAction
+        .stopCurrentVerticalRunIfSelectionChanges();
+    if (!_keyboardVisible && !controller.skipRequestKeyboard) {
+      requestKeyboard();
+    }
+    if (_handleDragFrameUpdateScheduled) {
+      return;
+    }
+    _handleDragFrameUpdateScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _handleDragFrameUpdateScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      updateRemoteValueIfNeeded();
+      _cursorCont.startOrStopCursorTimerIfNeeded(
+        _hasFocus,
+        controller.selection,
+      );
+      if (hasConnection) {
+        _cursorCont
+          ..stopCursorTimer(resetCharTicks: false)
+          ..startCursorTimer();
+      }
+      _markNeedsBuild();
+    });
+  }
+
   void _onChangeTextEditingValue([bool ignoreCaret = false]) {
     updateRemoteValueIfNeeded();
     if (ignoreCaret) {
       return;
     }
-    _showCaretOnScreen();
+    if (!renderEditor.isHandleDragging) {
+      _showCaretOnScreen();
+    }
     _cursorCont.startOrStopCursorTimerIfNeeded(_hasFocus, controller.selection);
     if (hasConnection) {
       // To keep the cursor from blinking while typing, we want to restart the
@@ -1236,6 +1285,7 @@ class QuillRawEditorState extends EditorState
             ? null
             : (context) => widget.config.contextMenuBuilder!(context, this),
         dragOffsetNotifier: widget.dragOffsetNotifier,
+        scrollController: _scrollController,
       );
       _selectionOverlay!.handlesVisible = _shouldShowSelectionHandles();
       _selectionOverlay!.showHandles();
@@ -1256,6 +1306,7 @@ class QuillRawEditorState extends EditorState
       WidgetsBinding.instance.addObserver(this);
       _showCaretOnScreen();
     } else {
+      _keyboardMetricsCaretTimer?.cancel();
       WidgetsBinding.instance.removeObserver(this);
     }
     updateKeepAlive();
@@ -1354,13 +1405,7 @@ class QuillRawEditorState extends EditorState
     if (_hasFocus) {
       final keyboardAlreadyShown = _keyboardVisible;
       openConnectionIfNeeded();
-      if (!keyboardAlreadyShown) {
-        /// delay 500 milliseconds for waiting keyboard show up
-        Future.delayed(
-          const Duration(milliseconds: 200),
-          _showCaretOnScreen,
-        );
-      } else {
+      if (keyboardAlreadyShown) {
         _showCaretOnScreen();
       }
     } else {

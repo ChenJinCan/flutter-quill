@@ -73,14 +73,16 @@ void main() {
           /// insert a newline
           ..insert(3, '\n');
 
-        /// Verify inserted blank line and block type has not changed
+        /// Verify the existing line keeps its block type and the new line is
+        /// plain.
         expect(
             document.toDelta(),
             Delta()
               ..insert('A')
               ..insert('\n', start)
               ..insert('B', {'bold': true})
-              ..insert('\n\n', start));
+              ..insert('\n', start)
+              ..insert('\n'));
 
         /// Change format of last (empty) line
         document.format(4, 0, attr);
