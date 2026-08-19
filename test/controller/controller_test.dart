@@ -15,6 +15,75 @@ void main() {
   });
 
   group('controller', () {
+    test('does not inherit inline style on a new line when disabled', () {
+      final plainNewLineController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert('bold', <String, dynamic>{Attribute.bold.key: true})
+            ..insert('\n'),
+        ),
+        selection: const TextSelection.collapsed(offset: 4),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(plainNewLineController.dispose);
+
+      plainNewLineController
+        ..replaceText(
+          4,
+          0,
+          '\n',
+          const TextSelection.collapsed(offset: 5),
+        )
+        ..replaceText(
+          5,
+          0,
+          'plain',
+          const TextSelection.collapsed(offset: 10),
+        );
+
+      expect(
+        plainNewLineController.document.toDelta(),
+        Delta()
+          ..insert('bold', <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\nplain\n'),
+      );
+    });
+
+    test('inherits inline style on a new line when enabled', () {
+      final styledNewLineController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert('bold', <String, dynamic>{Attribute.bold.key: true})
+            ..insert('\n'),
+        ),
+        selection: const TextSelection.collapsed(offset: 4),
+      );
+      addTearDown(styledNewLineController.dispose);
+
+      styledNewLineController
+        ..replaceText(
+          4,
+          0,
+          '\n',
+          const TextSelection.collapsed(offset: 5),
+        )
+        ..replaceText(
+          5,
+          0,
+          'styled',
+          const TextSelection.collapsed(offset: 11),
+        );
+
+      expect(
+        styledNewLineController.document.toDelta(),
+        Delta()
+          ..insert('bold', <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n')
+          ..insert('styled', <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n'),
+      );
+    });
+
     test('set document', () {
       const replacementContents = 'replacement\n';
       final newDocument =

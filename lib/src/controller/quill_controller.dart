@@ -281,7 +281,25 @@ class QuillController extends ChangeNotifier {
     Delta? delta;
     Style? style;
     if (len > 0 || data is! String || data.isNotEmpty) {
-      delta = document.replace(index, len, data);
+      var replacementData = data;
+      if (!keepStyleOnNewLine &&
+          len == 0 &&
+          data is String &&
+          data.isNotEmpty &&
+          !data.contains('\n') &&
+          index > 0) {
+        final plainText = document.toPlainText();
+        final isEmptyLineStart = index < plainText.length &&
+            plainText[index - 1] == '\n' &&
+            plainText[index] == '\n';
+        if (isEmptyLineStart) {
+          // A plain Delta bypasses the rule that inherits inline attributes
+          // from the preceding non-empty line. Subsequent typing then follows
+          // the newly inserted plain text instead.
+          replacementData = Delta()..insert(data);
+        }
+      }
+      delta = document.replace(index, len, replacementData);
 
       /// Remove block styles as they can only be attached to line endings
       style = Style.attr(Map<String, Attribute>.fromEntries(toggledStyle
