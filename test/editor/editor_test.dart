@@ -1,6 +1,7 @@
 import 'dart:convert' show jsonDecode;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_quill/src/l10n/extensions/localizations_ext.dart';
@@ -84,6 +85,80 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'row selection controls toggle another line without moving the caret',
+      (tester) async {
+        controller.document.insert(0, 'first line\nsecond line');
+        controller.updateSelection(
+          const TextSelection.collapsed(offset: 0),
+          ChangeSource.silent,
+        );
+        final focusNode = FocusNode();
+        final scrollController = ScrollController();
+        addTearDown(focusNode.dispose);
+        addTearDown(scrollController.dispose);
+        final manager = SwipeStateManager();
+        addTearDown(manager.resetAll);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: QuillEditor(
+                controller: controller,
+                focusNode: focusNode,
+                scrollController: scrollController,
+                config: const QuillEditorConfig(
+                  minHeight: 160,
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final lines = <RenderEditableTextLine>[];
+        void collectLines(RenderObject child) {
+          if (child is RenderEditableTextLine) lines.add(child);
+          child.visitChildren(collectLines);
+        }
+
+        tester
+            .renderObject(find.byType(QuillEditor))
+            .visitChildren(collectLines);
+        expect(lines, hasLength(2));
+        manager.selectComponent(lines.first, SwipeDirection.left);
+        await tester.pump();
+
+        final second = lines.last;
+        final semantics = SemanticsConfiguration();
+        second.describeSemanticsConfiguration(semantics);
+        expect(semantics.isSelected, isFalse);
+        expect(semantics.onTap, isNotNull);
+        final controlCenter = second.localToGlobal(
+          Offset(second.size.width - 18, second.size.height / 2),
+        );
+        await tester.tapAt(controlCenter);
+        await tester.pump();
+
+        expect(manager.getSelectedComponents(), containsAll(lines));
+        expect(second.swipeState.isSelected, isTrue);
+        expect(controller.selection, const TextSelection.collapsed(offset: 0));
+        expect(focusNode.hasFocus, isFalse);
+
+        final secondSwipeStart = second.localToGlobal(
+          Offset(second.size.width * 0.7, second.size.height / 2),
+        );
+        await tester.dragFrom(secondSwipeStart, const Offset(-180, 0));
+        await tester.pump(const Duration(milliseconds: 350));
+
+        expect(manager.getSelectedComponents(), {second});
+        expect(lines.first.swipeState.isSelected, isFalse);
+        expect(controller.selection, const TextSelection.collapsed(offset: 0));
+        expect(focusNode.hasFocus, isFalse);
       },
     );
 

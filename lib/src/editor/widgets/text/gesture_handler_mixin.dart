@@ -109,6 +109,54 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
   // 选中状态
   bool _isSelected = false;
+  int? _rowSelectionPointer;
+
+  bool get _supportsRowSelection => _swipeManager.canSelectComponent(this);
+
+  Rect get _rowSelectionHitRect {
+    final bounds = swipeEffectLocalBounds;
+    return Rect.fromCenter(
+      center: Offset(size.width - 18, bounds.center.dy),
+      width: 44,
+      height: 44,
+    );
+  }
+
+  bool get hasActiveRowSelectionControls =>
+      _swipeManager.isSelectionModeActive && _supportsRowSelection;
+
+  Color get rowSelectionSurfaceColor => const Color(0xFFFFFFFF);
+  Color get rowSelectionOutlineColor => const Color(0xFF718096);
+
+  void describeRowSelectionSemantics(SemanticsConfiguration config) {
+    if (!hasActiveRowSelectionControls) return;
+
+    config
+      ..isSemanticBoundary = true
+      ..isSelected = _isSelected
+      ..onTap = () {
+        _swipeManager.toggleComponentSelection(this);
+        HapticFeedback.selectionClick();
+      };
+  }
+
+  void _selectionModeChanged() {
+    if (!attached) return;
+    markNeedsPaint();
+    markNeedsSemanticsUpdate();
+  }
+
+  @override
+  void attach(covariant PipelineOwner owner) {
+    super.attach(owner);
+    _swipeManager.selectionModeListenable.addListener(_selectionModeChanged);
+  }
+
+  @override
+  void detach() {
+    _swipeManager.selectionModeListenable.removeListener(_selectionModeChanged);
+    super.detach();
+  }
 
   // 双击检测相关
   Timer? _doubleTapTimer;
@@ -233,6 +281,10 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   /// 2. 优先级：拖拽 > 滚动 > 滑动
   /// 3. 移除复杂的组件间冲突检查
   void handleGestureEvent(PointerEvent event, BoxHitTestEntry entry) {
+    if (_handleRowSelectionControl(event)) {
+      return;
+    }
+
     // 检查是否应该处理手势
     if (!shouldHandleGestureEvent()) {
       return;
@@ -280,6 +332,43 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     } else if (event is PointerCancelEvent) {
       _handlePointerCancel();
     }
+  }
+
+  bool _handleRowSelectionControl(PointerEvent event) {
+    if (!_swipeManager.isSelectionModeActive || !_supportsRowSelection) {
+      _rowSelectionPointer = null;
+      return false;
+    }
+
+    if (event is PointerDownEvent) {
+      if (_rowSelectionHitRect.contains(event.localPosition)) {
+        _rowSelectionPointer = event.pointer;
+        return true;
+      }
+      // The editor-level tap handlers remain disabled in row-selection mode,
+      // so an ordinary tap cannot move the caret. Let non-control pointers
+      // continue through the swipe recognizer so a new swipe stays exclusive.
+      return false;
+    }
+
+    if (_rowSelectionPointer == null || event.pointer != _rowSelectionPointer) {
+      return false;
+    }
+
+    if (event is PointerUpEvent) {
+      final shouldToggle = _rowSelectionHitRect.contains(event.localPosition);
+      _rowSelectionPointer = null;
+      if (shouldToggle) {
+        _swipeManager.toggleComponentSelection(this);
+        HapticFeedback.selectionClick();
+      }
+      return true;
+    }
+
+    if (event is PointerCancelEvent) {
+      _rowSelectionPointer = null;
+    }
+    return true;
   }
 
   /// 处理按下事件
@@ -792,6 +881,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     if (_isSelected != selected) {
       _isSelected = selected;
       markNeedsPaint();
+      markNeedsSemanticsUpdate();
     }
   }
 
@@ -887,6 +977,38 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
     // 返回有效偏移量供子类使用
     _lastEffectiveOffset = effectiveOffset;
+  }
+
+  /// Paints the explicit row selection control above the line contents.
+  void paintRowSelectionControl(PaintingContext context, Offset offset) {
+    if (!_swipeManager.isSelectionModeActive || !_supportsRowSelection) return;
+
+    final center = offset + _rowSelectionHitRect.center;
+    const accentColor = Color(0xFF2B6CB0);
+    final fill = Paint()
+      ..color = _isSelected ? accentColor : rowSelectionSurfaceColor
+      ..style = PaintingStyle.fill;
+    final outline = Paint()
+      ..color = _isSelected ? accentColor : rowSelectionOutlineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    context.canvas
+      ..drawCircle(center, 11, fill)
+      ..drawCircle(center, 11, outline);
+    if (_isSelected) {
+      final check = Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      final path = Path()
+        ..moveTo(center.dx - 5, center.dy)
+        ..lineTo(center.dx - 1.5, center.dy + 3.5)
+        ..lineTo(center.dx + 5.5, center.dy - 4);
+      context.canvas.drawPath(path, check);
+    }
   }
 
   Offset? _lastEffectiveOffset;

@@ -1,6 +1,6 @@
 // ignore_for_file: cascade_invocations
 
-import 'dart:async' show StreamSubscription, Timer;
+import 'dart:async' show StreamSubscription;
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:math' as math;
 import 'dart:ui' as ui hide TextStyle;
@@ -57,7 +57,6 @@ class QuillRawEditorState extends EditorState
   KeyboardVisibilityController? _keyboardVisibilityController;
   StreamSubscription<bool>? _keyboardVisibilitySubscription;
   bool _keyboardVisible = false;
-  Timer? _keyboardMetricsCaretTimer;
 
   // Selection overlay
   @override
@@ -1106,21 +1105,14 @@ class QuillRawEditorState extends EditorState
     super.didChangeMetrics();
 
     if (widget.config.focusNode.hasFocus) {
-      _keyboardMetricsCaretTimer?.cancel();
-      _keyboardMetricsCaretTimer = Timer(
-        const Duration(milliseconds: 80),
-        () {
-          if (mounted && widget.config.focusNode.hasFocus) {
-            _showCaretOnScreen();
-          }
-        },
-      );
+      // Follow the keyboard animation from its first inset frame. The caret
+      // reveal method already coalesces work to at most once per frame.
+      _showCaretOnScreen();
     }
   }
 
   @override
   void dispose() {
-    _keyboardMetricsCaretTimer?.cancel();
     SwipeStateManager().clearCurrentSwipingComponent();
     WidgetsBinding.instance.removeObserver(this);
     closeConnectionIfNeeded();
@@ -1306,7 +1298,6 @@ class QuillRawEditorState extends EditorState
       WidgetsBinding.instance.addObserver(this);
       _showCaretOnScreen();
     } else {
-      _keyboardMetricsCaretTimer?.cancel();
       WidgetsBinding.instance.removeObserver(this);
     }
     updateKeepAlive();

@@ -9,7 +9,7 @@ void main() {
 
   tearDown(manager.resetAll);
 
-  test('a second line swipe preserves the existing multi-selection', () {
+  test('a second line swipe keeps exactly the newly swiped line selected', () {
     final first = _FakeSwipeableComponent('first', 0, 6);
     final second = _FakeSwipeableComponent('second', 6, 7);
 
@@ -18,8 +18,8 @@ void main() {
       ..startSwipe(second, SwipeDirection.left, -40)
       ..selectComponent(second, SwipeDirection.left);
 
-    expect(manager.getSelectedComponents(), containsAll([first, second]));
-    expect(first.selected, true);
+    expect(manager.getSelectedComponents(), {second});
+    expect(first.selected, false);
     expect(second.selected, true);
   });
 
@@ -28,8 +28,8 @@ void main() {
     final third = _FakeSwipeableComponent('third', 13, 6);
 
     manager
-      ..selectComponent(third, SwipeDirection.left)
-      ..selectComponent(first, SwipeDirection.left);
+      ..selectComponent(first, SwipeDirection.left)
+      ..toggleComponentSelection(third);
 
     expect(
       manager.selectedDocumentRanges,
@@ -38,6 +38,25 @@ void main() {
         (offset: 13, length: 6),
       ],
     );
+  });
+
+  test('row selection controls toggle additional lines independently', () {
+    final first = _FakeSwipeableComponent('first', 0, 6);
+    final second = _FakeSwipeableComponent('second', 6, 7);
+
+    manager
+      ..selectComponent(first, SwipeDirection.left)
+      ..toggleComponentSelection(second);
+
+    expect(manager.getSelectedComponents(), containsAll([first, second]));
+    expect(first.selected, true);
+    expect(second.selected, true);
+
+    manager.toggleComponentSelection(first);
+
+    expect(manager.getSelectedComponents(), {second});
+    expect(first.selected, false);
+    expect(second.selected, true);
   });
 }
 

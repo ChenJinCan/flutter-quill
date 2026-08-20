@@ -1525,6 +1525,22 @@ class RenderEditableTextLine extends RenderEditableBox
   }
 
   @override
+  Color get rowSelectionSurfaceColor => color.computeLuminance() > 0.5
+      ? const Color(0xFF252525)
+      : const Color(0xFFFFFFFF);
+
+  @override
+  Color get rowSelectionOutlineColor => color.computeLuminance() > 0.5
+      ? const Color(0xFF90B4E8)
+      : const Color(0xFF718096);
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    describeRowSelectionSemantics(config);
+  }
+
+  @override
   void paint(PaintingContext context, Offset offset) {
     // 使用混入类的绘制效果方法
     paintSwipeEffects(context, offset);
@@ -1679,6 +1695,7 @@ class RenderEditableTextLine extends RenderEditableBox
       final parentData = _lineDecoration!.parentData as BoxParentData;
       context.paintChild(_lineDecoration!, effectiveOffset + parentData.offset);
     }
+    paintRowSelectionControl(context, effectiveOffset);
   }
 
   void _paintSelection(PaintingContext context, Offset effectiveOffset) {
@@ -1752,7 +1769,9 @@ class RenderEditableTextLine extends RenderEditableBox
     assert(debugHandleEvent(event, entry));
 
     // 如果没有滑动回调，不处理手势事件
-    if (onSwipeLeft == null && onSwipeRight == null) {
+    if (onSwipeLeft == null &&
+        onSwipeRight == null &&
+        !hasActiveRowSelectionControls) {
       return;
     }
 

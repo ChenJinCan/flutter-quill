@@ -480,8 +480,11 @@ class _QuillEditorSelectionGestureDetectorBuilder
   final QuillEditorState _state;
   final bool _detectWordBoundary;
 
+  bool get _selectingRows => _state._swipeManager.isSelectionModeActive;
+
   @override
   void onForcePressStart(ForcePressDetails details) {
+    if (_selectingRows) return;
     super.onForcePressStart(details);
     if (delegate.selectionEnabled && shouldShowSelectionToolbar) {
       editor!.showToolbar();
@@ -493,6 +496,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   @override
   void onSingleLongTapMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (_selectingRows) return;
     if (_state.config.onSingleLongTapMoveUpdate != null) {
       if (renderEditor != null &&
           _state.config.onSingleLongTapMoveUpdate!(
@@ -544,6 +548,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   @override
   void onTapDown(TapDownDetails details) {
+    if (_selectingRows) return;
     if (_state.config.onTapDown != null) {
       if (renderEditor != null &&
           _state.config.onTapDown!(
@@ -565,6 +570,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   @override
   void onSingleTapUp(TapUpDetails details) {
+    if (_selectingRows) return;
     if (_state.config.onTapUp != null &&
         renderEditor != null &&
         _state.config.onTapUp!(
@@ -631,6 +637,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
   /// onSingleTapUp for mouse right click
   @override
   void onSecondarySingleTapUp(TapUpDetails details) {
+    if (_selectingRows) return;
     if (delegate.selectionEnabled &&
         renderEditor != null &&
         renderEditor!.selection.isCollapsed) {
@@ -653,6 +660,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   @override
   void onSingleLongTapStart(LongPressStartDetails details) {
+    if (_selectingRows) return;
     if (_state.config.onSingleLongTapStart != null) {
       if (renderEditor != null &&
           _state.config.onSingleLongTapStart!(
