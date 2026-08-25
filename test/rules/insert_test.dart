@@ -5,8 +5,8 @@ import 'package:flutter_quill/src/rules/insert.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('plain new line', () {
-    test('enter after a checklist starts an unformatted paragraph', () {
+  group('list-aware new line', () {
+    test('Enter after a checklist continues with an unchecked item', () {
       const text = '待办事项';
       final document = Document.fromDelta(
         Delta()
@@ -23,9 +23,67 @@ void main() {
           ..insert('\n', <String, dynamic>{
             Attribute.list.key: Attribute.unchecked.value,
           })
-          ..insert('\n'),
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.unchecked.value,
+          }),
       );
     });
+
+    test('Enter after a checked task creates an unchecked task', () {
+      const text = '已完成';
+      final document = Document.fromDelta(
+        Delta()
+          ..insert(text)
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.checked.value,
+          }),
+      )..insert(text.length, '\n');
+
+      expect(
+        document.toDelta(),
+        Delta()
+          ..insert(text)
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.checked.value,
+          })
+          ..insert('\n', <String, dynamic>{
+            Attribute.list.key: Attribute.unchecked.value,
+          }),
+      );
+    });
+
+    final listCases = <(String, String)>[
+      ('ordered', Attribute.ol.value!),
+      ('bullet', Attribute.ul.value!),
+      ('unchecked task', Attribute.unchecked.value!),
+      ('checked task', Attribute.checked.value!),
+    ];
+    final indentCases = <(String, int)>[
+      ('level 1', Attribute.indentL1.value!),
+      ('level 2', Attribute.indentL2.value!),
+      ('level 3', Attribute.indentL3.value!),
+    ];
+    for (final listCase in listCases) {
+      for (final indentCase in indentCases) {
+        test(
+          'Enter on empty ${listCase.$1} at ${indentCase.$1} clears list and indent',
+          () {
+            final document = Document.fromDelta(
+              Delta()
+                ..insert('\n', <String, dynamic>{
+                  Attribute.list.key: listCase.$2,
+                  Attribute.indent.key: indentCase.$2,
+                }),
+            )..insert(0, '\n');
+
+            expect(
+              document.toDelta(),
+              Delta()..insert('\n'),
+            );
+          },
+        );
+      }
+    }
   });
 
   group('MarkdownShortcutInsertRule', () {

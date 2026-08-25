@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill/quill_delta.dart';
 import 'package:flutter_quill/src/l10n/extensions/localizations_ext.dart';
 import 'package:flutter_quill_test/flutter_quill_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -59,9 +60,10 @@ void main() {
     );
 
     testWidgets(
-      'double tapping trailing editor space never indexes beyond the document',
+      'double tapping trailing editor space keeps a collapsed end caret',
       (tester) async {
-        controller.document.insert(0, 'hello');
+        const text = '提供给广告费';
+        controller.document.insert(0, text);
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
@@ -85,8 +87,210 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
+        expect(
+          controller.selection,
+          const TextSelection.collapsed(offset: text.length),
+        );
       },
     );
+
+    testWidgets(
+      'double tapping internal whitespace keeps a caret and shows the menu',
+      (tester) async {
+        const text = 'left right';
+        var menuButtonTypes = <ContextMenuButtonType>[];
+        controller.document.insert(0, text);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.iOS),
+            home: Scaffold(
+              body: QuillEditor.basic(
+                controller: controller,
+                config: QuillEditorConfig(
+                  expands: true,
+                  contextMenuBuilder: (_, state) {
+                    menuButtonTypes = state.contextMenuButtonItems
+                        .map((item) => item.type)
+                        .toList();
+                    return const SizedBox(
+                      key: ValueKey('collapsed-caret-menu'),
+                      width: 120,
+                      height: 44,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final lines = _editableTextLines(tester);
+        expect(lines, hasLength(1));
+        final line = lines.single;
+        final whitespaceStart = line.getLocalRectForCaret(
+          const TextPosition(offset: 4),
+        );
+        final whitespaceEnd = line.getLocalRectForCaret(
+          const TextPosition(offset: 5),
+        );
+        final whitespaceCenter = line.localToGlobal(
+          Offset(
+            (whitespaceStart.left + whitespaceEnd.left) / 2,
+            whitespaceStart.center.dy,
+          ),
+        );
+
+        await tester.tapAt(whitespaceCenter);
+        await tester.pump(const Duration(milliseconds: 80));
+        await tester.tapAt(whitespaceCenter);
+        await tester.pumpAndSettle();
+
+        expect(controller.selection.isCollapsed, isTrue);
+        expect(controller.selection.extentOffset, anyOf(4, 5));
+        expect(find.byKey(const ValueKey('collapsed-caret-menu')), findsOne);
+        expect(menuButtonTypes, contains(ContextMenuButtonType.cut));
+        expect(menuButtonTypes, contains(ContextMenuButtonType.copy));
+        expect(menuButtonTypes, contains(ContextMenuButtonType.paste));
+        expect(menuButtonTypes, contains(ContextMenuButtonType.selectAll));
+      },
+    );
+
+    testWidgets('double tapping a line tail does not select its final word', (
+      tester,
+    ) async {
+      controller.document.insert(0, 'first\nsecond');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.iOS),
+          home: Scaffold(
+            body: QuillEditor.basic(
+              controller: controller,
+              config: const QuillEditorConfig(expands: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final lines = _editableTextLines(tester);
+      expect(lines, hasLength(2));
+      final firstLine = lines.first;
+      final lineEndCaret = firstLine.getLocalRectForCaret(
+        const TextPosition(offset: 5),
+      );
+      final lineTail = firstLine.localToGlobal(
+        lineEndCaret.centerRight + const Offset(24, 0),
+      );
+
+      await tester.tapAt(lineTail);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(lineTail);
+      await tester.pumpAndSettle();
+
+      expect(controller.selection.isCollapsed, isTrue);
+      expect(controller.selection.extentOffset, 5);
+    });
+
+    testWidgets('double tapping an empty paragraph keeps its empty-line caret',
+        (
+      tester,
+    ) async {
+      controller.document.insert(0, 'first\n\nthird');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.iOS),
+          home: Scaffold(
+            body: QuillEditor.basic(
+              controller: controller,
+              config: const QuillEditorConfig(expands: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final lines = _editableTextLines(tester);
+      expect(lines, hasLength(3));
+      final emptyLine = lines[1];
+      final emptyLineCaret = emptyLine.getLocalRectForCaret(
+        const TextPosition(offset: 0),
+      );
+      final emptyLineSpace = emptyLine.localToGlobal(
+        emptyLineCaret.centerRight + const Offset(24, 0),
+      );
+
+      await tester.tapAt(emptyLineSpace);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(emptyLineSpace);
+      await tester.pumpAndSettle();
+
+      expect(
+        controller.selection,
+        const TextSelection.collapsed(offset: 6),
+      );
+    });
+
+    testWidgets('double tapping text still selects the tapped word', (
+      tester,
+    ) async {
+      const text = 'double tap target';
+      var menuButtonTypes = <ContextMenuButtonType>[];
+      controller.document.insert(0, text);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: QuillEditor.basic(
+              controller: controller,
+              config: QuillEditorConfig(
+                expands: true,
+                contextMenuBuilder: (_, state) {
+                  menuButtonTypes = state.contextMenuButtonItems
+                      .map((item) => item.type)
+                      .toList();
+                  return const SizedBox(
+                    key: ValueKey('word-selection-menu'),
+                    width: 120,
+                    height: 44,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final lines = <RenderEditableTextLine>[];
+      void collectLines(RenderObject child) {
+        if (child is RenderEditableTextLine) lines.add(child);
+        child.visitChildren(collectLines);
+      }
+
+      tester.renderObject(find.byType(QuillEditor)).visitChildren(collectLines);
+      expect(lines, hasLength(1));
+      final line = lines.single;
+      final wordStart = line.getLocalRectForCaret(
+        const TextPosition(offset: 0),
+      );
+      final wordEnd = line.getLocalRectForCaret(const TextPosition(offset: 6));
+      final wordCenter = line.localToGlobal(
+        Offset(
+          (wordStart.left + wordEnd.left) / 2,
+          wordStart.center.dy,
+        ),
+      );
+
+      await tester.tapAt(wordCenter);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(wordCenter);
+      await tester.pumpAndSettle();
+
+      expect(controller.selection.isCollapsed, isFalse);
+      expect(controller.selection.textInside(text), 'double');
+      expect(find.byKey(const ValueKey('word-selection-menu')), findsOne);
+      expect(menuButtonTypes, contains(ContextMenuButtonType.copy));
+    });
 
     testWidgets(
       'row selection controls toggle another line without moving the caret',
@@ -176,6 +380,108 @@ void main() {
       expect(controller.document.toPlainText(), 'test\n');
     });
 
+    testWidgets(
+      'keyboard Enter continues an indented ordered list with stable numbering',
+      (tester) async {
+        controller.dispose();
+        const topItem = '一级列表';
+        const nestedItem = '二级列表';
+        const newNestedItem = '换行后的二级列表';
+        const tailItem = '下一个一级列表';
+        const nestedItemEnd = topItem.length + 1 + nestedItem.length;
+        final replaceCalls = <(int, int, Object?)>[];
+        controller = QuillController(
+          document: Document.fromDelta(
+            Delta()
+              ..insert(topItem)
+              ..insert('\n', <String, dynamic>{
+                Attribute.list.key: Attribute.ol.value,
+              })
+              ..insert(nestedItem, <String, dynamic>{Attribute.bold.key: true})
+              ..insert('\n', <String, dynamic>{
+                Attribute.list.key: Attribute.ol.value,
+                Attribute.indent.key: Attribute.indentL1.value,
+              })
+              ..insert(tailItem)
+              ..insert('\n', <String, dynamic>{
+                Attribute.list.key: Attribute.ol.value,
+              }),
+          ),
+          selection: const TextSelection.collapsed(offset: nestedItemEnd),
+          keepStyleOnNewLine: false,
+          onReplaceText: (index, length, data) {
+            replaceCalls.add((index, length, data));
+            return true;
+          },
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: QuillEditor.basic(
+                controller: controller,
+                config: const QuillEditorConfig(),
+              ),
+            ),
+          ),
+        );
+        final editor = find.byType(QuillEditor);
+
+        await tester.quillEnterTextAtPosition(editor, '\n', nestedItemEnd);
+        expect(replaceCalls, <(int, int, Object?)>[(nestedItemEnd, 0, '\n')]);
+        final topLevelAttributes = <String, dynamic>{
+          Attribute.list.key: Attribute.ol.value,
+        };
+        final listAttributes = <String, dynamic>{
+          Attribute.list.key: Attribute.ol.value,
+          Attribute.indent.key: Attribute.indentL1.value,
+        };
+        expect(
+          controller.document.toDelta(),
+          Delta()
+            ..insert(topItem)
+            ..insert('\n', topLevelAttributes)
+            ..insert(
+              nestedItem,
+              <String, dynamic>{Attribute.bold.key: true},
+            )
+            ..insert('\n\n', listAttributes)
+            ..insert(tailItem)
+            ..insert('\n', topLevelAttributes),
+        );
+        await tester.quillEnterTextAtPosition(
+          editor,
+          newNestedItem,
+          nestedItemEnd + 1,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          controller.document.toDelta(),
+          Delta()
+            ..insert(topItem)
+            ..insert('\n', topLevelAttributes)
+            ..insert(
+              nestedItem,
+              <String, dynamic>{Attribute.bold.key: true},
+            )
+            ..insert('\n', listAttributes)
+            ..insert(newNestedItem)
+            ..insert('\n', listAttributes)
+            ..insert(tailItem)
+            ..insert('\n', topLevelAttributes),
+        );
+        final numberPoints = tester
+            .widgetList<QuillNumberPoint>(find.byType(QuillNumberPoint))
+            .toList();
+        expect(numberPoints, hasLength(4));
+        expect(
+          numberPoints.map((point) => point.index),
+          <String>['1', 'a', 'b', '2'],
+        );
+      },
+    );
+
     testWidgets('insertContent is handled correctly', (tester) async {
       String? latestUri;
       await tester.pumpWidget(
@@ -249,11 +555,16 @@ void main() {
     }
 
     testWidgets('custom context menu builder', (tester) async {
+      controller.document.insert(0, 'long press target');
+      final focusNode = FocusNode();
+      final scrollController = ScrollController();
+      addTearDown(focusNode.dispose);
+      addTearDown(scrollController.dispose);
       await tester.pumpWidget(
         MaterialApp(
           home: QuillEditor(
-            focusNode: FocusNode(),
-            scrollController: ScrollController(),
+            focusNode: focusNode,
+            scrollController: scrollController,
             controller: controller,
             config: QuillEditorConfig(
               autoFocus: true,
@@ -263,6 +574,9 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
+      expect(controller.selection.isCollapsed, isTrue);
 
       // Long press to show menu
       await tester.longPress(find.byType(QuillEditor));
@@ -376,4 +690,16 @@ void main() {
       },
     );
   });
+}
+
+List<RenderEditableTextLine> _editableTextLines(WidgetTester tester) {
+  final lines = <RenderEditableTextLine>[];
+
+  void collectLines(RenderObject child) {
+    if (child is RenderEditableTextLine) lines.add(child);
+    child.visitChildren(collectLines);
+  }
+
+  tester.renderObject(find.byType(QuillEditor)).visitChildren(collectLines);
+  return lines;
 }

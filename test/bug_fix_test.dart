@@ -121,6 +121,7 @@ void main() {
         editor.focusNode.unfocus();
         await tester.pump();
         await tester.tap(find.byType(QuillCheckboxPoint));
+        await tester.pump(const Duration(milliseconds: 300));
         expect(tester.takeException(), isNull);
       });
     });

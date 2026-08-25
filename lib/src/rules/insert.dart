@@ -24,8 +24,12 @@ abstract class InsertRule extends Rule {
 }
 
 /// Keeps the current line's block attributes on that line while making the
-/// paragraph created by Enter plain. Pasted multi-line content continues to
-/// use the normal block-preservation rules below.
+/// paragraph created by Enter plain.
+///
+/// List structure is the exception: Enter continues the current list and its
+/// indentation, while checked task items start the next item unchecked.
+/// Pasted multi-line content continues to use the normal block-preservation
+/// rules below.
 @immutable
 class StartUnformattedLineOnNewLineRule extends InsertRule {
   const StartUnformattedLineOnNewLineRule();
@@ -47,7 +51,10 @@ class StartUnformattedLineOnNewLineRule extends InsertRule {
       return null;
     }
 
-    final lineStart = line.offset;
+    // A line inside a block stores [offset] relative to that block. Enter rules
+    // operate on document indexes, so use the absolute offset here; otherwise
+    // a nested list can accidentally read attributes from an earlier line.
+    final lineStart = line.documentOffset;
     final newlineOffset = lineStart + line.length - 1;
     final collectedStyle = document.collectStyle(newlineOffset, 1);
     final lineAttributes = <String, dynamic>{
@@ -57,20 +64,45 @@ class StartUnformattedLineOnNewLineRule extends InsertRule {
     if (lineAttributes.isEmpty) {
       return null;
     }
+
+    final continuedLineAttributes = <String, dynamic>{};
+    final listValue = lineAttributes[Attribute.list.key];
+    if (listValue != null) {
+      continuedLineAttributes[Attribute.list.key] =
+          listValue == Attribute.checked.value
+              ? Attribute.unchecked.value
+              : listValue;
+      final indentValue = lineAttributes[Attribute.indent.key];
+      if (indentValue != null) {
+        continuedLineAttributes[Attribute.indent.key] = indentValue;
+      }
+    }
+
     if (index == lineStart) {
       return Delta()
         ..retain(index)
-        ..insert('\n');
+        ..insert(
+          '\n',
+          continuedLineAttributes.isEmpty ? null : continuedLineAttributes,
+        );
     }
 
-    final clearedAttributes = <String, dynamic>{
-      for (final key in lineAttributes.keys) key: null,
+    final updatedAttributes = <String, dynamic>{
+      for (final entry in lineAttributes.entries)
+        if (!continuedLineAttributes.containsKey(entry.key))
+          entry.key: null
+        else if (continuedLineAttributes[entry.key] != entry.value)
+          entry.key: continuedLineAttributes[entry.key],
     };
-    return Delta()
+    final delta = Delta()
       ..retain(index)
-      ..insert('\n', lineAttributes)
-      ..retain(newlineOffset - index)
-      ..retain(1, clearedAttributes);
+      ..insert('\n', lineAttributes);
+    if (updatedAttributes.isNotEmpty) {
+      delta
+        ..retain(newlineOffset - index)
+        ..retain(1, updatedAttributes);
+    }
+    return delta;
   }
 }
 
@@ -268,10 +300,16 @@ class AutoExitBlockRule extends InsertRule {
 
     // Here we now know that the line after `cur` is not in the same block
     // therefore we can exit this block.
-    final attributes = cur.attributes ?? <String, dynamic>{};
+    final attributes = <String, dynamic>{
+      ...?cur.attributes,
+    };
     final k =
         attributes.keys.firstWhere(Attribute.blockKeysExceptHeader.contains);
     attributes[k] = null;
+    if (k == Attribute.list.key &&
+        attributes.containsKey(Attribute.indent.key)) {
+      attributes[Attribute.indent.key] = null;
+    }
     // retain(1) should be '\n', set it with no attribute
     return Delta()
       ..retain(index + (len ?? 0))

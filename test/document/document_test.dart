@@ -73,8 +73,17 @@ void main() {
           /// insert a newline
           ..insert(3, '\n');
 
-        /// Verify the existing line keeps its block type and the new line is
-        /// plain.
+        final listValue = start[Attribute.list.key];
+        final continuedAttributes = listValue == null
+            ? <String, dynamic>{}
+            : <String, dynamic>{
+                Attribute.list.key: listValue == Attribute.checked.value
+                    ? Attribute.unchecked.value
+                    : listValue,
+              };
+
+        /// Verify the existing line keeps its block type. Lists continue on
+        /// the new line, while non-list block formats start plain.
         expect(
             document.toDelta(),
             Delta()
@@ -82,7 +91,10 @@ void main() {
               ..insert('\n', start)
               ..insert('B', {'bold': true})
               ..insert('\n', start)
-              ..insert('\n'));
+              ..insert(
+                '\n',
+                continuedAttributes.isEmpty ? null : continuedAttributes,
+              ));
 
         /// Change format of last (empty) line
         document.format(4, 0, attr);

@@ -8,7 +8,6 @@ import '../../document/attribute.dart';
 import '../../document/nodes/leaf.dart';
 import '../editor.dart';
 import '../raw_editor/raw_editor.dart';
-import 'nearby_word_search.dart';
 import 'text/magnifier.dart';
 import 'text/text_selection.dart';
 
@@ -288,80 +287,37 @@ class EditorTextSelectionGestureDetectorBuilder {
   @protected
   void onDoubleTapDown(TapDownDetails details) {
     if (delegate.selectionEnabled) {
-      renderEditor!.selectWord(SelectionChangedCause.tap);
+      final position = renderEditor!.getPositionForOffset(
+        details.globalPosition,
+      );
+      final wordSelection = renderEditor!.selectWordAtPosition(position);
+      final text = editor!.textEditingValue.text;
+      final selectedText =
+          wordSelection.isValid ? wordSelection.textInside(text) : '';
+      final hasValidWord = !wordSelection.isCollapsed &&
+          selectedText.trim().isNotEmpty &&
+          selectedText != '\n';
 
-      // Check if we actually selected any text
+      if (hasValidWord) {
+        renderEditor!.onSelectionChanged(
+          wordSelection,
+          SelectionChangedCause.tap,
+        );
+      } else {
+        // Whitespace has no word-selection semantics. Keep a collapsed caret
+        // at the actual tap position instead of selecting a nearby word.
+        renderEditor!.selectPositionAt(
+          from: details.globalPosition,
+          cause: SelectionChangedCause.tap,
+        );
+      }
+
       SchedulerBinding.instance.addPostFrameCallback((_) {
-        final selection = renderEditor?.selection;
-        final hasValidSelection = selection != null &&
-            !selection.isCollapsed &&
-            selection.isValid &&
-            editor!.textEditingValue.selection
-                .textInside(editor!.textEditingValue.text)
-                .trim()
-                .isNotEmpty;
-
-        if (!hasValidSelection) {
-          // If no valid text was selected, try to find and select a nearby word
-          _selectNearbyWord(details.globalPosition);
-        }
-
         if (checkSelectionToolbarShouldShow(isAdditionalAction: false)) {
           editor!.showToolbar();
         }
       });
     }
-  }
-
-  /// Attempts to select a word near the given position when the initial
-  /// double-tap didn't select any meaningful text
-  void _selectNearbyWord(Offset globalPosition) {
-    final position = renderEditor!.getPositionForOffset(globalPosition);
-    final text = editor!.textEditingValue.text;
-
-    if (text.isEmpty) return;
-
-    for (final newOffset in boundedNearbyWordSearchOffsets(
-      positionOffset: position.offset,
-      textLength: text.length,
-    )) {
-      final char = text[newOffset];
-      if (_isWordCharacter(char)) {
-        final newPosition = TextPosition(offset: newOffset);
-        final wordBoundary = renderEditor!.getWordBoundary(newPosition);
-        final isSafeBoundary = wordBoundary.isValid &&
-            !wordBoundary.isCollapsed &&
-            wordBoundary.start >= 0 &&
-            wordBoundary.end <= text.length &&
-            wordBoundary.start < wordBoundary.end;
-        if (isSafeBoundary) {
-          final wordText = text.substring(wordBoundary.start, wordBoundary.end);
-          if (wordText.trim().isNotEmpty) {
-            renderEditor!.onSelectionChanged(
-              TextSelection(
-                  baseOffset: wordBoundary.start,
-                  extentOffset: wordBoundary.end),
-              SelectionChangedCause.tap,
-            );
-            return;
-          }
-        }
-      }
-    }
-  }
-
-  /// Checks if a character is part of a word (letter, digit, or underscore)
-  bool _isWordCharacter(String char) {
-    if (char.isEmpty) return false;
-    final codeUnit = char.codeUnitAt(0);
-    return (codeUnit >= 65 && codeUnit <= 90) || // A-Z
-        (codeUnit >= 97 && codeUnit <= 122) || // a-z
-        (codeUnit >= 48 && codeUnit <= 57) || // 0-9
-        codeUnit == 95 || // _
-        codeUnit >= 0x4e00 && codeUnit <= 0x9fff || // Chinese characters
-        codeUnit >= 0x3040 && codeUnit <= 0x309f || // Hiragana
-        codeUnit >= 0x30a0 && codeUnit <= 0x30ff || // Katakana
-        codeUnit >= 0xac00 && codeUnit <= 0xd7af; // Korean
   }
 
   /// Handler for [EditorTextSelectionGestureDetector.onDragSelectionStart].
@@ -427,12 +383,15 @@ class EditorTextSelectionGestureDetectorBuilder {
     ValueNotifier<Offset?>? dragOffsetNotifier,
     QuillMagnifierBuilder? quillMagnifierBuilder,
   }) {
-    // 动态决定是否启用原生长按手势
-    // 只有在已经有焦点且有有效光标时才启用原生长按
-    final hasFocusAndCursor = editor != null &&
-        editor!.widget.config.focusNode.hasFocus &&
-        editor!.widget.controller.selection.isValid &&
-        editor!.widget.controller.selection.isCollapsed;
+    var longPressGestureStarted = false;
+
+    bool hasFocusedCollapsedCaret() {
+      final currentEditor = editor;
+      return currentEditor != null &&
+          currentEditor.widget.config.focusNode.hasFocus &&
+          currentEditor.widget.controller.selection.isValid &&
+          currentEditor.widget.controller.selection.isCollapsed;
+    }
 
     return EditorTextSelectionGestureDetector(
       key: key,
@@ -441,11 +400,25 @@ class EditorTextSelectionGestureDetectorBuilder {
       onForcePressEnd: delegate.forcePressEnabled ? onForcePressEnd : null,
       onSingleTapUp: onSingleTapUp,
       onSingleTapCancel: onSingleTapCancel,
-      // 只在已有光标的情况下启用原生长按手势
-      onSingleLongTapStart: hasFocusAndCursor ? onSingleLongTapStart : null,
-      onSingleLongTapMoveUpdate:
-          hasFocusAndCursor ? onSingleLongTapMoveUpdate : null,
-      onSingleLongTapEnd: hasFocusAndCursor ? onSingleLongTapEnd : null,
+      // Keep the recognizer attached as focus can be injected after this
+      // widget builds. Gate each gesture at its actual start instead.
+      onSingleLongTapStart: (details) {
+        longPressGestureStarted = hasFocusedCollapsedCaret();
+        if (longPressGestureStarted) {
+          onSingleLongTapStart(details);
+        }
+      },
+      onSingleLongTapMoveUpdate: (details) {
+        if (longPressGestureStarted) {
+          onSingleLongTapMoveUpdate(details);
+        }
+      },
+      onSingleLongTapEnd: (details) {
+        if (longPressGestureStarted) {
+          onSingleLongTapEnd(details);
+        }
+        longPressGestureStarted = false;
+      },
       onDoubleTapDown: onDoubleTapDown,
       onSecondarySingleTapUp: onSecondarySingleTapUp,
       onDragSelectionStart: onDragSelectionStart,

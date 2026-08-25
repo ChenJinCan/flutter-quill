@@ -84,6 +84,342 @@ void main() {
       );
     });
 
+    test('Enter continues an ordered list without carrying inline style', () {
+      const firstItem = '第一项';
+      const secondItem = '第二项';
+      final listController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert(
+              firstItem,
+              <String, dynamic>{Attribute.bold.key: true},
+            )
+            ..insert(
+              '\n',
+              <String, dynamic>{Attribute.list.key: Attribute.ol.value},
+            ),
+        ),
+        selection: const TextSelection.collapsed(offset: firstItem.length),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(listController.dispose);
+
+      listController
+        ..replaceText(
+          firstItem.length,
+          0,
+          '\n',
+          const TextSelection.collapsed(offset: firstItem.length + 1),
+        )
+        ..replaceText(
+          firstItem.length + 1,
+          0,
+          secondItem,
+          const TextSelection.collapsed(
+            offset: firstItem.length + secondItem.length + 1,
+          ),
+        );
+
+      expect(
+        listController.document.toDelta(),
+        Delta()
+          ..insert(
+            firstItem,
+            <String, dynamic>{Attribute.bold.key: true},
+          )
+          ..insert(
+            '\n',
+            <String, dynamic>{Attribute.list.key: Attribute.ol.value},
+          )
+          ..insert(secondItem)
+          ..insert(
+            '\n',
+            <String, dynamic>{Attribute.list.key: Attribute.ol.value},
+          ),
+      );
+    });
+
+    test('Enter keeps ordered-list indentation on the new item', () {
+      const item = '缩进项';
+      const nextItem = '下一项';
+      final nestedListController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert(item)
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+              Attribute.indent.key: Attribute.indentL2.value,
+            }),
+        ),
+        selection: const TextSelection.collapsed(offset: item.length),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(nestedListController.dispose);
+
+      nestedListController
+        ..replaceText(
+          item.length,
+          0,
+          '\n',
+          const TextSelection.collapsed(offset: item.length + 1),
+        )
+        ..replaceText(
+          item.length + 1,
+          0,
+          nextItem,
+          const TextSelection.collapsed(
+            offset: item.length + nextItem.length + 1,
+          ),
+        );
+
+      final nestedAttributes = <String, dynamic>{
+        Attribute.list.key: Attribute.ol.value,
+        Attribute.indent.key: Attribute.indentL2.value,
+      };
+      expect(
+        nestedListController.document.toDelta(),
+        Delta()
+          ..insert(item)
+          ..insert('\n', nestedAttributes)
+          ..insert(nextItem)
+          ..insert('\n', nestedAttributes),
+      );
+    });
+
+    test('Enter splits an ordered item without renumbering the remainder', () {
+      final splitListController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert(
+              'ABCD',
+              <String, dynamic>{Attribute.bold.key: true},
+            )
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+              Attribute.indent.key: Attribute.indentL1.value,
+            }),
+        ),
+        selection: const TextSelection.collapsed(offset: 2),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(splitListController.dispose);
+
+      splitListController.replaceText(
+        2,
+        0,
+        '\n',
+        const TextSelection.collapsed(offset: 3),
+      );
+
+      final listAttributes = <String, dynamic>{
+        Attribute.list.key: Attribute.ol.value,
+        Attribute.indent.key: Attribute.indentL1.value,
+      };
+      expect(
+        splitListController.document.toDelta(),
+        Delta()
+          ..insert('AB', <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n', listAttributes)
+          ..insert('CD', <String, dynamic>{Attribute.bold.key: true})
+          ..insert('\n', listAttributes),
+      );
+    });
+
+    test('Enter keeps both nested list boundaries before a following item', () {
+      const topItem = '一级列表';
+      const nestedItem = '二级列表';
+      const tailItem = '下一个一级列表';
+      const nestedItemEnd = topItem.length + 1 + nestedItem.length;
+      final nestedBoundaryController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert(topItem)
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+            })
+            ..insert(nestedItem)
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+              Attribute.indent.key: Attribute.indentL1.value,
+            })
+            ..insert(tailItem)
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+            }),
+        ),
+        selection: const TextSelection.collapsed(offset: nestedItemEnd),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(nestedBoundaryController.dispose);
+
+      nestedBoundaryController.replaceText(
+        nestedItemEnd,
+        0,
+        '\n',
+        const TextSelection.collapsed(offset: nestedItemEnd + 1),
+      );
+
+      final topLevelAttributes = <String, dynamic>{
+        Attribute.list.key: Attribute.ol.value,
+      };
+      final nestedAttributes = <String, dynamic>{
+        Attribute.list.key: Attribute.ol.value,
+        Attribute.indent.key: Attribute.indentL1.value,
+      };
+      expect(
+        nestedBoundaryController.document.toDelta(),
+        Delta()
+          ..insert(topItem)
+          ..insert('\n', topLevelAttributes)
+          ..insert(nestedItem)
+          ..insert('\n\n', nestedAttributes)
+          ..insert(tailItem)
+          ..insert('\n', topLevelAttributes),
+      );
+    });
+
+    final listCases = <(String, String, String)>[
+      ('ordered', Attribute.ol.value!, Attribute.ol.value!),
+      ('bullet', Attribute.ul.value!, Attribute.ul.value!),
+      (
+        'unchecked task',
+        Attribute.unchecked.value!,
+        Attribute.unchecked.value!,
+      ),
+      ('checked task', Attribute.checked.value!, Attribute.unchecked.value!),
+    ];
+    final indentCases = <(String, int?)>[
+      ('without indentation', null),
+      ('at indentation level 1', Attribute.indentL1.value!),
+      ('at indentation level 2', Attribute.indentL2.value!),
+      ('at indentation level 3', Attribute.indentL3.value!),
+    ];
+    for (final listCase in listCases) {
+      for (final indentCase in indentCases) {
+        test(
+          'Enter continues ${listCase.$1} ${indentCase.$1}',
+          () {
+            const firstItem = 'A';
+            const secondItem = 'B';
+            final currentLineAttributes = <String, dynamic>{
+              Attribute.list.key: listCase.$2,
+              if (indentCase.$2 != null) Attribute.indent.key: indentCase.$2,
+            };
+            final nextLineAttributes = <String, dynamic>{
+              Attribute.list.key: listCase.$3,
+              if (indentCase.$2 != null) Attribute.indent.key: indentCase.$2,
+            };
+            final matrixController = QuillController(
+              document: Document.fromDelta(
+                Delta()
+                  ..insert(
+                    firstItem,
+                    <String, dynamic>{Attribute.bold.key: true},
+                  )
+                  ..insert('\n', currentLineAttributes),
+              ),
+              selection: const TextSelection.collapsed(offset: 1),
+              keepStyleOnNewLine: false,
+            );
+            addTearDown(matrixController.dispose);
+
+            matrixController
+              ..replaceText(
+                firstItem.length,
+                0,
+                '\n',
+                const TextSelection.collapsed(offset: 2),
+              )
+              ..replaceText(
+                firstItem.length + 1,
+                0,
+                secondItem,
+                const TextSelection.collapsed(offset: 3),
+              );
+
+            expect(
+              matrixController.document.toDelta(),
+              Delta()
+                ..insert(
+                  firstItem,
+                  <String, dynamic>{Attribute.bold.key: true},
+                )
+                ..insert('\n', currentLineAttributes)
+                ..insert(secondItem)
+                ..insert('\n', nextLineAttributes),
+            );
+          },
+        );
+      }
+    }
+
+    test('Enter at the start of an indented list keeps both list lines', () {
+      final startController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert('Item')
+            ..insert('\n', <String, dynamic>{
+              Attribute.list.key: Attribute.ol.value,
+              Attribute.indent.key: Attribute.indentL3.value,
+            }),
+        ),
+        selection: const TextSelection.collapsed(offset: 0),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(startController.dispose);
+
+      startController.replaceText(
+        0,
+        0,
+        '\n',
+        const TextSelection.collapsed(offset: 1),
+      );
+
+      final attributes = <String, dynamic>{
+        Attribute.list.key: Attribute.ol.value,
+        Attribute.indent.key: Attribute.indentL3.value,
+      };
+      expect(
+        startController.document.toDelta(),
+        Delta()
+          ..insert('\n', attributes)
+          ..insert('Item')
+          ..insert('\n', attributes),
+      );
+    });
+
+    test('Enter does not continue standalone paragraph indentation', () {
+      final paragraphController = QuillController(
+        document: Document.fromDelta(
+          Delta()
+            ..insert('Indented')
+            ..insert('\n', <String, dynamic>{
+              Attribute.indent.key: Attribute.indentL3.value,
+            }),
+        ),
+        selection: const TextSelection.collapsed(offset: 8),
+        keepStyleOnNewLine: false,
+      );
+      addTearDown(paragraphController.dispose);
+
+      paragraphController.replaceText(
+        8,
+        0,
+        '\n',
+        const TextSelection.collapsed(offset: 9),
+      );
+
+      expect(
+        paragraphController.document.toDelta(),
+        Delta()
+          ..insert('Indented')
+          ..insert('\n', <String, dynamic>{
+            Attribute.indent.key: Attribute.indentL3.value,
+          })
+          ..insert('\n'),
+      );
+    });
+
     test('set document', () {
       const replacementContents = 'replacement\n';
       final newDocument =
