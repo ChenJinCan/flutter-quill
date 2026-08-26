@@ -446,9 +446,10 @@ class SwipeStateManager {
       return false;
     }
 
-    // 当有焦点时，全局禁止左右滑动操作
-    if (_focusNode?.hasFocus == true) {
-      debugPrint('SwipeStateManager.startSwipe: 编辑器有焦点，禁止滑动操作');
+    // 保留光标所在行的原生文本手势，但允许用户在编辑器仍有焦点时
+    // 左滑其他行。否则键盘打开后整篇文档都无法唤起行工具条。
+    if (_focusNode?.hasFocus == true && !shouldAllowDrag(component)) {
+      debugPrint('SwipeStateManager.startSwipe: 光标在当前行，禁止滑动操作');
       return false;
     }
 

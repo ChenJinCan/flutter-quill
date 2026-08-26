@@ -422,6 +422,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
 
     // 编辑模式下的特殊处理
     final isEditingMode = gestureConfig.mode == GestureMode.editing;
+    final hasCursorOnThisComponent =
+        isEditingMode && hasFocus && shouldPreventGestureWhenHasCursor();
 
     // 如果在双击窗口内有移动，取消长按检测（避免误触发拖拽）
     if (_isInDoubleTapWindow && horizontalDistance > 5.0) {
@@ -430,8 +432,11 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       return;
     }
 
-    // 如果正在滚动，取消长按检测（但不中断已经开始的拖拽）
-    if (_isScrolling && !_isDragging && !_isLongPressing) {
+    // 垂直滚动优先；但 ScrollPosition 的 notifier 在键盘/布局动画后可能
+    // 短暂保持为 true，不能因此吞掉方向已经明确的水平行手势。
+    final hasVerticalScrollConflict =
+        _isScrolling && verticalDistance >= horizontalDistance;
+    if (hasVerticalScrollConflict && !_isDragging && !_isLongPressing) {
       if (_longPressTimer != null) {
         _cancelLongPressDetection();
         debugPrint('移动中检测到滚动，取消长按检测');
@@ -468,9 +473,8 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
     if (gestureConfig.enableSwipe &&
         !_isLongPressing &&
         !_isDragging &&
-        !_isScrolling &&
         !_isInDoubleTapWindow &&
-        !(isEditingMode && hasFocus) &&
+        !hasCursorOnThisComponent &&
         horizontalDistance > gestureConfig.moveThreshold &&
         verticalDistance < horizontalDistance &&
         !(_isSwipingLeft || _isSwipingRight)) {
