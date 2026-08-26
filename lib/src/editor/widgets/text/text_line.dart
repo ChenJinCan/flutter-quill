@@ -1525,14 +1525,10 @@ class RenderEditableTextLine extends RenderEditableBox
   }
 
   @override
-  Color get rowSelectionSurfaceColor => color.computeLuminance() > 0.5
-      ? const Color(0xFF252525)
-      : const Color(0xFFFFFFFF);
+  Color get rowSelectionSurfaceColor => Colors.transparent;
 
   @override
-  Color get rowSelectionOutlineColor => color.computeLuminance() > 0.5
-      ? const Color(0xFF90B4E8)
-      : const Color(0xFF718096);
+  Color get rowSelectionOutlineColor => const Color(0xFF718096);
 
   @override
   void describeSemanticsConfiguration(SemanticsConfiguration config) {

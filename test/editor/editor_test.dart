@@ -334,7 +334,9 @@ void main() {
             .renderObject(find.byType(QuillEditor))
             .visitChildren(collectLines);
         expect(lines, hasLength(2));
-        manager.selectComponent(lines.first, SwipeDirection.left);
+        manager
+          ..selectComponent(lines.first, SwipeDirection.left)
+          ..enterSelectionMode();
         await tester.pump();
 
         final second = lines.last;

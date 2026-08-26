@@ -33,13 +33,37 @@ class SwipeStateManager {
   /// Drives the trailing selection control shown by every selectable line.
   final ValueNotifier<bool> selectionModeListenable = ValueNotifier(false);
 
-  bool get isSelectionModeActive => selectionModeListenable.value;
+  /// Reports whether at least one row is selected, independently of whether
+  /// explicit multi-selection controls are visible.
+  final ValueNotifier<bool> hasSelectionListenable = ValueNotifier(false);
 
-  void _syncSelectionMode() {
-    final next = _selectedComponents.isNotEmpty;
-    if (selectionModeListenable.value != next) {
-      selectionModeListenable.value = next;
+  bool get isSelectionModeActive => selectionModeListenable.value;
+  bool get hasSelection => hasSelectionListenable.value;
+
+  void _syncHasSelection() {
+    final value = _selectedComponents.isNotEmpty;
+    if (hasSelectionListenable.value != value) {
+      hasSelectionListenable.value = value;
     }
+  }
+
+  void _setSelectionMode(bool value) {
+    if (selectionModeListenable.value != value) {
+      selectionModeListenable.value = value;
+    }
+  }
+
+  /// Shows row selection controls without requiring a swipe to imply
+  /// multi-selection mode.
+  void enterSelectionMode() => _setSelectionMode(true);
+
+  /// Leaves explicit row selection mode and clears every selected row.
+  void exitSelectionMode({bool triggerCallback = true}) {
+    clearSelection(
+      triggerCallback: triggerCallback,
+      exitSelectionMode: false,
+    );
+    _setSelectionMode(false);
   }
 
   /// 向后兼容：返回第一个选中的组件
@@ -140,7 +164,8 @@ class SwipeStateManager {
     // 创建副本以避免在遍历时并发修改错误
     final componentsToClear = Set<SwipeableComponent>.from(_selectedComponents);
     _selectedComponents.clear();
-    _syncSelectionMode();
+    _syncHasSelection();
+    _setSelectionMode(false);
     for (final component in componentsToClear) {
       component.setSelected(false);
 
@@ -174,14 +199,14 @@ class SwipeStateManager {
     _currentSwipingComponent = null;
 
     // 清除所有选中状态（如果存在）
-    if (_selectedComponents.isNotEmpty) {
+    if (_selectedComponents.isNotEmpty && !isSelectionModeActive) {
       debugPrint(
           'SwipeStateManager: 清除当前选中组件（共${_selectedComponents.length}个）');
       // 创建副本以避免在遍历时并发修改错误
       final componentsToClear =
           Set<SwipeableComponent>.from(_selectedComponents);
       _selectedComponents.clear();
-      _syncSelectionMode();
+      _syncHasSelection();
       for (final component in componentsToClear) {
         component.setSelected(false);
         // 触发组件取消选中回调
@@ -355,7 +380,7 @@ class SwipeStateManager {
         }
       }
       _selectedComponents.removeWhere((c) => c != component);
-      _syncSelectionMode();
+      _syncHasSelection();
     }
 
     // 开始拖拽时取消编辑器焦点
@@ -469,6 +494,7 @@ class SwipeStateManager {
     final shouldNotifySelected = !_selectedComponents.contains(component);
     if (shouldNotifySelected) {
       _selectedComponents.add(component);
+      _syncHasSelection();
       component.setSelected(true);
     }
     final componentsToClear = _selectedComponents
@@ -476,6 +502,7 @@ class SwipeStateManager {
         .toList(growable: false);
     for (final selected in componentsToClear) {
       _selectedComponents.remove(selected);
+      _syncHasSelection();
       selected.setSelected(false);
       _onComponentUnselected?.call(selected.lineNode, selected.block);
     }
@@ -485,7 +512,6 @@ class SwipeStateManager {
       _onComponentSelected?.call(component.lineNode, component.block, direction,
           component.documentOffset, component.documentLength);
     }
-    _syncSelectionMode();
 
     // 清除当前滑动状态
     _currentSwipingComponent?.resetSwipe();
@@ -502,15 +528,15 @@ class SwipeStateManager {
   /// therefore must only be invoked by the trailing row selection control.
   void toggleComponentSelection(SwipeableComponent component) {
     if (_selectedComponents.remove(component)) {
+      _syncHasSelection();
       component.setSelected(false);
-      _syncSelectionMode();
       _onComponentUnselected?.call(component.lineNode, component.block);
       return;
     }
 
     _selectedComponents.add(component);
+    _syncHasSelection();
     component.setSelected(true);
-    _syncSelectionMode();
   }
 
   /// 获取所有选中的组件
@@ -536,12 +562,16 @@ class SwipeStateManager {
   }
 
   /// 清除选中状态
-  void clearSelection({bool triggerCallback = true}) {
+  void clearSelection({
+    bool triggerCallback = true,
+    bool exitSelectionMode = true,
+  }) {
     // 清除所有选中组件
     // 创建副本以避免在遍历时并发修改错误
     final componentsToClear = Set<SwipeableComponent>.from(_selectedComponents);
     _selectedComponents.clear();
-    _syncSelectionMode();
+    _syncHasSelection();
+    if (exitSelectionMode) _setSelectionMode(false);
     for (final component in componentsToClear) {
       try {
         component.setSelected(false);
@@ -650,12 +680,13 @@ class SwipeStateManager {
     // 清理无效的选中组件
     _selectedComponents
         .removeWhere((component) => !_isComponentValid(component));
+    _syncHasSelection();
     if (_selectedComponents.isNotEmpty &&
         !_isComponentValid(_selectedComponent)) {
       debugPrint('SwipeStateManager: 选中组件已被释放，自动清理');
       _selectedComponents.clear();
+      _syncHasSelection();
     }
-    _syncSelectionMode();
     return _selectedComponent;
   }
 }

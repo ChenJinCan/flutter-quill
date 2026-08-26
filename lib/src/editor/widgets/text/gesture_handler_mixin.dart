@@ -116,7 +116,7 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   Rect get _rowSelectionHitRect {
     final bounds = swipeEffectLocalBounds;
     return Rect.fromCenter(
-      center: Offset(size.width - 18, bounds.center.dy),
+      center: Offset(size.width - 16, bounds.center.dy),
       width: 44,
       height: 44,
     );
@@ -125,14 +125,17 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
   bool get hasActiveRowSelectionControls =>
       _swipeManager.isSelectionModeActive && _supportsRowSelection;
 
-  Color get rowSelectionSurfaceColor => const Color(0xFFFFFFFF);
+  Color get rowSelectionSurfaceColor => const Color(0x00000000);
   Color get rowSelectionOutlineColor => const Color(0xFF718096);
 
   void describeRowSelectionSemantics(SemanticsConfiguration config) {
+    // Keep the render object's semantics-node shape stable while selection
+    // mode toggles. Flutter does not allow an existing semantics node to stop
+    // forming a boundary during the same frame that its tap action is removed.
+    config.isSemanticBoundary = true;
     if (!hasActiveRowSelectionControls) return;
 
     config
-      ..isSemanticBoundary = true
       ..isSelected = _isSelected
       ..onTap = () {
         _swipeManager.toggleComponentSelection(this);
@@ -994,19 +997,19 @@ mixin GestureHandlerMixin on RenderBox implements SwipeableComponent {
       ..strokeWidth = 1.5;
 
     context.canvas
-      ..drawCircle(center, 11, fill)
-      ..drawCircle(center, 11, outline);
+      ..drawCircle(center, 8, fill)
+      ..drawCircle(center, 8, outline);
     if (_isSelected) {
       final check = Paint()
         ..color = const Color(0xFFFFFFFF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
+        ..strokeWidth = 1.75
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round;
       final path = Path()
-        ..moveTo(center.dx - 5, center.dy)
-        ..lineTo(center.dx - 1.5, center.dy + 3.5)
-        ..lineTo(center.dx + 5.5, center.dy - 4);
+        ..moveTo(center.dx - 3.5, center.dy)
+        ..lineTo(center.dx - 1, center.dy + 2.5)
+        ..lineTo(center.dx + 4, center.dy - 3);
       context.canvas.drawPath(path, check);
     }
   }

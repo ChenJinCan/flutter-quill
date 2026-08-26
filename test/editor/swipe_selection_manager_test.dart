@@ -19,6 +19,8 @@ void main() {
       ..selectComponent(second, SwipeDirection.left);
 
     expect(manager.getSelectedComponents(), {second});
+    expect(manager.hasSelection, isTrue);
+    expect(manager.isSelectionModeActive, isFalse);
     expect(first.selected, false);
     expect(second.selected, true);
   });
@@ -46,17 +48,38 @@ void main() {
 
     manager
       ..selectComponent(first, SwipeDirection.left)
+      ..enterSelectionMode()
       ..toggleComponentSelection(second);
 
     expect(manager.getSelectedComponents(), containsAll([first, second]));
     expect(first.selected, true);
     expect(second.selected, true);
+    expect(manager.isSelectionModeActive, isTrue);
 
     manager.toggleComponentSelection(first);
 
     expect(manager.getSelectedComponents(), {second});
+    expect(manager.isSelectionModeActive, isTrue);
     expect(first.selected, false);
     expect(second.selected, true);
+  });
+
+  test('explicit selection mode can be cancelled and clears selected rows', () {
+    final first = _FakeSwipeableComponent('first', 0, 6);
+
+    manager
+      ..selectComponent(first, SwipeDirection.left)
+      ..enterSelectionMode();
+
+    expect(manager.isSelectionModeActive, isTrue);
+    expect(manager.getSelectedComponents(), {first});
+
+    manager.exitSelectionMode();
+
+    expect(manager.isSelectionModeActive, isFalse);
+    expect(manager.hasSelection, isFalse);
+    expect(manager.getSelectedComponents(), isEmpty);
+    expect(first.selected, isFalse);
   });
 }
 
