@@ -1511,16 +1511,31 @@ class RenderEditableTextLine extends RenderEditableBox
 
   @override
   Rect get swipeEffectLocalBounds {
-    final bodyOffset = _body!.parentData as BoxParentData;
+    final bodyOffset = (_body!.parentData as BoxParentData).offset;
+    var contentTop = bodyOffset.dy;
+    var contentBottom = bodyOffset.dy + _body!.size.height;
+
+    void includeChild(RenderBox? child) {
+      if (child == null) return;
+      final childOffset = (child.parentData as BoxParentData).offset;
+      contentTop = math.min(contentTop, childOffset.dy);
+      contentBottom = math.max(
+        contentBottom,
+        childOffset.dy + child.size.height,
+      );
+    }
+
+    includeChild(_leading);
+    includeChild(_lineDecoration);
+
     const verticalInset = 2.0;
+    final top = math.max(0, contentTop - verticalInset).toDouble();
+    final bottom = math.min(size.height, contentBottom + verticalInset);
     return Rect.fromLTWH(
       -2,
-      math.max(0, bodyOffset.offset.dy - verticalInset),
+      top,
       size.width + 4,
-      math.min(
-        size.height,
-        _body!.size.height + verticalInset * 2,
-      ),
+      math.max(0, bottom - top).toDouble(),
     );
   }
 

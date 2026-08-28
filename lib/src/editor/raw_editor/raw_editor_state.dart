@@ -994,6 +994,14 @@ class QuillRawEditorState extends EditorState
 
   /// 键盘收起时清除文本选中状态
   void _clearTextSelectionOnKeyboardHide() {
+    // Toolbar replacement panels intentionally hide the system keyboard while
+    // keeping the current editing target active. In that case the caller sets
+    // skipRequestKeyboard before TextInput.hide, so the selection must remain
+    // available for formatting actions in the replacement panel.
+    if (controller.skipRequestKeyboard) {
+      return;
+    }
+
     // 如果当前有文本选中状态，将其折叠到选区末尾
     if (!controller.selection.isCollapsed) {
       debugPrint('键盘收起，清除文本选中状态');

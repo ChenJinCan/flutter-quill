@@ -368,6 +368,61 @@ void main() {
       },
     );
 
+    testWidgets(
+      'row selection background includes decoration below checklist text',
+      (tester) async {
+        controller.document.insert(0, 'task');
+        controller.formatText(
+          controller.document.length - 1,
+          1,
+          Attribute.unchecked,
+        );
+        final focusNode = FocusNode();
+        final scrollController = ScrollController();
+        addTearDown(focusNode.dispose);
+        addTearDown(scrollController.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: QuillEditor(
+                controller: controller,
+                focusNode: focusNode,
+                scrollController: scrollController,
+                config: QuillEditorConfig(
+                  minHeight: 160,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  customLeadingBlockBuilder: (_, config) =>
+                      const QuillLeadingWithLineDecoration(
+                    leading: SizedBox.square(dimension: 18),
+                    lineDecoration: SizedBox(
+                      key: ValueKey('task-metadata-decoration'),
+                      width: 96,
+                      height: 32,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final line = _editableTextLines(tester).single;
+        final decorationRect = tester.getRect(
+          find.byKey(const ValueKey('task-metadata-decoration')),
+        );
+        final decorationBottom =
+            line.globalToLocal(decorationRect.bottomLeft).dy;
+
+        expect(
+          line.swipeEffectLocalBounds.bottom,
+          greaterThanOrEqualTo(decorationBottom),
+          reason: 'The selected row surface must contain task metadata.',
+        );
+      },
+    );
+
     testWidgets('Keyboard entered text is stored in document', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
