@@ -1057,6 +1057,7 @@ class EditorTextSelectionGestureDetector extends StatefulWidget {
     this.onSingleLongTapStart,
     this.onSingleLongTapMoveUpdate,
     this.onSingleLongTapEnd,
+    this.nativeLongPressOwnerResolver,
     this.onDoubleTapDown,
     this.onDragSelectionStart,
     this.onDragSelectionUpdate,
@@ -1115,6 +1116,11 @@ class EditorTextSelectionGestureDetector extends StatefulWidget {
   /// Called after [onSingleLongTapStart] when the pointer is lifted.
   final GestureLongPressEndCallback? onSingleLongTapEnd;
 
+  /// Resolves whether native text selection owns the accepted long press for
+  /// the recognizer's exact primary pointer.
+  final bool Function(int pointer, LongPressStartDetails details)?
+      nativeLongPressOwnerResolver;
+
   /// Called after a momentary hold or a short tap that is close in space and
   /// time (within [kDoubleTapTimeout]) to a previous short tap.
   final GestureTapDownCallback? onDoubleTapDown;
@@ -1166,6 +1172,9 @@ class _EditorTextSelectionGestureDetectorState
 
   // The last offset of the drag gesture.
   Offset? _magnifierPosition;
+  LongPressGestureRecognizer? _longPressGestureRecognizer;
+  bool _nativeLongPressOwned = false;
+  int? _nativeLongPressPointer;
 
   @override
   void initState() {
@@ -1179,7 +1188,14 @@ class _EditorTextSelectionGestureDetectorState
     _doubleTapTimer?.cancel();
     _dragUpdateThrottleTimer?.cancel();
     widget.dragOffsetNotifier?.removeListener(_dragOffsetListener);
+    _clearNativeLongPress();
     super.dispose();
+  }
+
+  void _clearNativeLongPress() {
+    widget.dragOffsetNotifier?.value = null;
+    _nativeLongPressOwned = false;
+    _nativeLongPressPointer = null;
   }
 
   // update magnifier location (hide if null) - this listener is called during a build phase
@@ -1333,27 +1349,36 @@ class _EditorTextSelectionGestureDetectorState
   }
 
   void _handleLongPressStart(LongPressStartDetails details) {
-    if (!_isDoubleTap) {
-      widget.dragOffsetNotifier?.value = details.globalPosition;
-      widget.onSingleLongTapStart?.call(details);
-    }
+    if (_isDoubleTap) return;
+
+    final pointer = _longPressGestureRecognizer?.primaryPointer;
+    _nativeLongPressPointer = pointer;
+    _nativeLongPressOwned = pointer != null &&
+        (widget.nativeLongPressOwnerResolver?.call(pointer, details) ?? true);
+    if (!_nativeLongPressOwned) return;
+
+    widget.dragOffsetNotifier?.value = details.globalPosition;
+    widget.onSingleLongTapStart?.call(details);
   }
 
   void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    if (!_isDoubleTap) {
-      widget.dragOffsetNotifier?.value = details.globalPosition;
-      widget.onSingleLongTapMoveUpdate?.call(details);
-    }
+    if (_isDoubleTap || !_nativeLongPressOwned) return;
+    widget.dragOffsetNotifier?.value = details.globalPosition;
+    widget.onSingleLongTapMoveUpdate?.call(details);
   }
 
   void _handleLongPressEnd(LongPressEndDetails details) {
-    if (!_isDoubleTap) {
+    if (!_isDoubleTap && _nativeLongPressOwned) {
       widget.onSingleLongTapEnd?.call(details);
     }
-    // after a long press (from double tap or drag) make sure
-    // magnifier is removed
-    widget.dragOffsetNotifier?.value = null;
+    _clearNativeLongPress();
     _isDoubleTap = false;
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _nativeLongPressPointer) {
+      _clearNativeLongPress();
+    }
   }
 
   void _doubleTapTimeout() {
@@ -1395,7 +1420,7 @@ class _EditorTextSelectionGestureDetectorState
         widget.onSingleLongTapEnd != null) {
       gestures[LongPressGestureRecognizer] =
           GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-        () => LongPressGestureRecognizer(
+        () => _longPressGestureRecognizer = LongPressGestureRecognizer(
             debugOwner: this,
             supportedDevices: <PointerDeviceKind>{PointerDeviceKind.touch}),
         (instance) {
@@ -1440,20 +1465,23 @@ class _EditorTextSelectionGestureDetectorState
       );
     }
 
-    return RawGestureDetector(
-      gestures: gestures,
-      excludeFromSemantics: true,
-      behavior: widget.behavior,
-      child: (widget.quillMagnifierBuilder == null)
-          ? widget.child
-          : Stack(
-              clipBehavior: Clip.none,
-              children: [
-                widget.child,
-                if (_magnifierPosition != null)
-                  widget.quillMagnifierBuilder!(_magnifierPosition!)
-              ],
-            ),
+    return Listener(
+      onPointerCancel: _handlePointerCancel,
+      child: RawGestureDetector(
+        gestures: gestures,
+        excludeFromSemantics: true,
+        behavior: widget.behavior,
+        child: (widget.quillMagnifierBuilder == null)
+            ? widget.child
+            : Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  widget.child,
+                  if (_magnifierPosition != null)
+                    widget.quillMagnifierBuilder!(_magnifierPosition!)
+                ],
+              ),
+      ),
     );
   }
 }

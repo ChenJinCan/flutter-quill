@@ -1,19 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../controller/quill_controller.dart';
 import '../../../document/nodes/block.dart';
 import '../../../document/nodes/line.dart';
+import 'drag_sort_diagnostics.dart';
 import 'swipe_manager.dart';
-
-const bool _kDebugDragSort = true;
-
-void _debugPrint(String message) {
-  if (_kDebugDragSort) {
-    debugPrint(message);
-  }
-}
 
 class _LineInfo {
   _LineInfo({
@@ -59,13 +53,14 @@ class DragSortOverlay {
     required Offset initialGlobalPosition,
     ScrollController? scrollController,
   }) {
-    _debugPrint(
-        'DragSortOverlay.show: component=${component.componentId}, textContent="${component.textContent}", position=$initialGlobalPosition');
-
     final swipeManager = SwipeStateManager();
     if (swipeManager.currentSwipingComponent != null &&
         swipeManager.currentSwipingComponent != component) {
-      _debugPrint('DragSortOverlay.show: 其他组件正在滑动，拒绝显示');
+      QuillDragSortDiagnostics.event(
+        phase: 'overlay_show',
+        result: 'rejected',
+        reason: 'another_component_swiping',
+      );
       return;
     }
 
@@ -89,9 +84,8 @@ class DragSortOverlay {
       ),
     );
 
-    _debugPrint('DragSortOverlay.show: 正在插入覆盖层到Overlay');
     Overlay.of(context).insert(_overlayEntry!);
-    _debugPrint('DragSortOverlay.show: 覆盖层已插入，isVisible=$isVisible');
+    QuillDragSortDiagnostics.event(phase: 'overlay_show', result: 'success');
   }
 
   static bool get isVisible => _overlayEntry != null;
@@ -191,6 +185,11 @@ class DragSortOverlay {
     if (_draggingComponent == null ||
         _controller == null ||
         _insertionOffset == null) {
+      QuillDragSortDiagnostics.event(
+        phase: 'sort_commit',
+        result: 'skipped',
+        reason: 'missing_drag_state',
+      );
       hide();
       return;
     }
@@ -198,8 +197,13 @@ class DragSortOverlay {
     try {
       _performDocumentReorder(
           _draggingComponent!, _controller!, _insertionOffset!);
+      QuillDragSortDiagnostics.event(phase: 'sort_commit', result: 'success');
     } catch (e) {
-      _debugPrint('拖拽排序失败: $e');
+      QuillDragSortDiagnostics.event(
+        phase: 'sort_commit',
+        result: 'failure',
+        reason: 'exception_${e.runtimeType}',
+      );
     } finally {
       hide();
     }
@@ -219,18 +223,18 @@ class DragSortOverlay {
     final completeLineDelta = controller.document
         .toDelta()
         .slice(sourceOffset, sourceOffset + sourceLength);
-    
+
     // 检查Delta是否为空
     if (completeLineDelta.isEmpty) {
       return;
     }
-    
+
     final originalSkipRequestKeyboard = controller.skipRequestKeyboard;
     controller.skipRequestKeyboard = true;
 
     // 记录原始文档长度
     final originalDocumentLength = controller.document.length;
-    
+
     int adjustedInsertionOffset = insertionOffset;
     if (insertionOffset > sourceOffset) {
       adjustedInsertionOffset = insertionOffset - sourceLength;
@@ -243,7 +247,7 @@ class DragSortOverlay {
 
       // 获取删除后的文档长度
       final documentLength = controller.document.length;
-      
+
       // 特殊处理：如果原始插入位置等于文档长度（拖拽到底部），
       // 删除后应该插入到新的文档末尾
       if (insertionOffset == originalDocumentLength) {
@@ -405,9 +409,6 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
   Widget build(BuildContext context) {
     final currentPos =
         DragSortOverlay._currentPosition ?? widget.initialPosition;
-
-    _debugPrint(
-        '_DragOverlayWidget.build: currentPos=$currentPos, textContent="${widget.component.textContent}"');
 
     // 立即同步更新插入指示器位置
     _updateInsertIndicator(currentPos);
@@ -576,8 +577,6 @@ class _DragOverlayWidgetState extends State<_DragOverlayWidget> {
 
   /// 构建拖拽预览组件
   Widget _buildDragPreview(String textContent) {
-    debugPrint('DragSortOverlay._buildDragPreview: textContent="$textContent"');
-
     return Container(
       constraints: const BoxConstraints(maxWidth: 300),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

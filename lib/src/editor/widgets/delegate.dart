@@ -8,7 +8,9 @@ import '../../document/attribute.dart';
 import '../../document/nodes/leaf.dart';
 import '../editor.dart';
 import '../raw_editor/raw_editor.dart';
+import 'text/drag_sort_diagnostics.dart';
 import 'text/magnifier.dart';
+import 'text/swipe_manager.dart';
 import 'text/text_selection.dart';
 
 typedef CustomStyleBuilder = TextStyle Function(Attribute attribute);
@@ -383,14 +385,52 @@ class EditorTextSelectionGestureDetectorBuilder {
     ValueNotifier<Offset?>? dragOffsetNotifier,
     QuillMagnifierBuilder? quillMagnifierBuilder,
   }) {
-    var longPressGestureStarted = false;
-
-    bool hasFocusedCollapsedCaret() {
+    bool nativeTextSelectionOwnsLongPress(
+      int pointer,
+      LongPressStartDetails details,
+    ) {
       final currentEditor = editor;
-      return currentEditor != null &&
-          currentEditor.widget.config.focusNode.hasFocus &&
-          currentEditor.widget.controller.selection.isValid &&
-          currentEditor.widget.controller.selection.isCollapsed;
+      if (currentEditor == null ||
+          !currentEditor.widget.config.focusNode.hasFocus) {
+        QuillDragSortDiagnostics.event(
+          phase: 'magnifier_gate',
+          result: 'suppressed',
+          reason: 'native_text_selection_unavailable',
+          activateSink: true,
+        );
+        return false;
+      }
+
+      final controller = currentEditor.widget.controller;
+      final selection = controller.selection;
+      if (!selection.isValid || !selection.isCollapsed) {
+        QuillDragSortDiagnostics.event(
+          phase: 'magnifier_gate',
+          result: 'suppressed',
+          reason: 'native_text_selection_unavailable',
+          activateSink: true,
+        );
+        return false;
+      }
+
+      final dragCandidateDecision =
+          SwipeStateManager().dragGestureCandidateShouldHandleLongPress(
+        pointer,
+      );
+      final nativeOwnsLongPress = dragCandidateDecision != true;
+      QuillDragSortDiagnostics.event(
+        phase: 'magnifier_gate',
+        result: nativeOwnsLongPress ? 'enabled' : 'suppressed',
+        reason: nativeOwnsLongPress
+            ? 'native_text_selection_owner'
+            : 'drag_sort_owner',
+        activateSink: true,
+      );
+
+      // With no matching custom drag owner, keep native text selection. This
+      // also covers whitespace and non-draggable editor surfaces without
+      // guessing their owner from a document offset.
+      return nativeOwnsLongPress;
     }
 
     return EditorTextSelectionGestureDetector(
@@ -402,22 +442,15 @@ class EditorTextSelectionGestureDetectorBuilder {
       onSingleTapCancel: onSingleTapCancel,
       // Keep the recognizer attached as focus can be injected after this
       // widget builds. Gate each gesture at its actual start instead.
-      onSingleLongTapStart: (details) {
-        longPressGestureStarted = hasFocusedCollapsedCaret();
-        if (longPressGestureStarted) {
-          onSingleLongTapStart(details);
-        }
-      },
-      onSingleLongTapMoveUpdate: (details) {
-        if (longPressGestureStarted) {
-          onSingleLongTapMoveUpdate(details);
-        }
-      },
+      nativeLongPressOwnerResolver: nativeTextSelectionOwnsLongPress,
+      onSingleLongTapStart: onSingleLongTapStart,
+      onSingleLongTapMoveUpdate: onSingleLongTapMoveUpdate,
       onSingleLongTapEnd: (details) {
-        if (longPressGestureStarted) {
-          onSingleLongTapEnd(details);
-        }
-        longPressGestureStarted = false;
+        onSingleLongTapEnd(details);
+        QuillDragSortDiagnostics.finish(
+          phase: 'magnifier_end',
+          result: 'ended',
+        );
       },
       onDoubleTapDown: onDoubleTapDown,
       onSecondarySingleTapUp: onSecondarySingleTapUp,

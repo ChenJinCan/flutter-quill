@@ -10,6 +10,20 @@ import '../../../document/nodes/leaf.dart';
 import '../../../document/nodes/line.dart';
 import '../../../document/nodes/node.dart';
 
+class DragGestureCandidateLease {
+  const DragGestureCandidateLease._({
+    required this.generation,
+    required this.pointer,
+    required this.owner,
+    required this.capturedNode,
+  });
+
+  final int generation;
+  final int pointer;
+  final SwipeableComponent owner;
+  final Node capturedNode;
+}
+
 /// 全局滑动状态管理器
 /// 确保一次只能有一个组件处于滑动状态，并管理滚动冲突
 class SwipeStateManager {
@@ -72,6 +86,13 @@ class SwipeStateManager {
 
   /// 当前正在拖拽的组件
   SwipeableComponent? _currentDraggingComponent;
+
+  /// The render-object gesture owner for the pointer that may become a
+  /// drag-sort. This is registered on pointer down, before Flutter's native
+  /// long-press recognizer resolves, so text selection can yield to the exact
+  /// hit-tested component instead of inferring ownership from coordinates.
+  final Map<int, DragGestureCandidateLease> _dragGestureCandidates = {};
+  int _dragGestureCandidateGeneration = 0;
 
   /// QuillController引用，用于在拖拽时取消focus
   QuillController? _controller;
@@ -159,6 +180,7 @@ class SwipeStateManager {
     // 清除当前拖拽状态
     _currentDraggingComponent?.endDrag();
     _currentDraggingComponent = null;
+    _dragGestureCandidates.clear();
 
     // 清除所有选中状态
     // 创建副本以避免在遍历时并发修改错误
@@ -346,6 +368,62 @@ class SwipeStateManager {
     }
 
     return true;
+  }
+
+  DragGestureCandidateLease? tryClaimDragGestureCandidate({
+    required int pointer,
+    required SwipeableComponent owner,
+  }) {
+    final existing = _dragGestureCandidates[pointer];
+    if (existing != null && isDragGestureCandidateActive(existing)) {
+      return null;
+    }
+
+    final lease = DragGestureCandidateLease._(
+      generation: ++_dragGestureCandidateGeneration,
+      pointer: pointer,
+      owner: owner,
+      capturedNode: owner.documentNode,
+    );
+    _dragGestureCandidates[pointer] = lease;
+    return lease;
+  }
+
+  bool isDragGestureCandidateActive(DragGestureCandidateLease lease) {
+    if (!identical(_dragGestureCandidates[lease.pointer], lease)) {
+      return false;
+    }
+
+    final owner = lease.owner;
+    final renderOwner = owner is RenderObject ? owner as RenderObject : null;
+    final valid = (renderOwner == null || renderOwner.attached) &&
+        identical(owner.documentNode, lease.capturedNode);
+    if (!valid) {
+      _dragGestureCandidates.remove(lease.pointer);
+    }
+    return valid;
+  }
+
+  void releaseDragGestureCandidate(DragGestureCandidateLease lease) {
+    if (isDragGestureCandidateActive(lease)) {
+      _dragGestureCandidates.remove(lease.pointer);
+    }
+  }
+
+  /// Returns `null` when the pointer has no active custom drag-sort claim.
+  /// Otherwise, returns whether that exact hit-tested component should own
+  /// the gesture instead of native text selection.
+  bool? dragGestureCandidateShouldHandleLongPress(int pointer) {
+    final lease = _dragGestureCandidates[pointer];
+    if (lease == null || !isDragGestureCandidateActive(lease)) return null;
+    return shouldAllowDrag(lease.owner);
+  }
+
+  bool promoteDragGestureCandidate(DragGestureCandidateLease lease) {
+    if (!isDragGestureCandidateActive(lease) || !shouldAllowDrag(lease.owner)) {
+      return false;
+    }
+    return startDrag(lease.owner);
   }
 
   /// 开始拖拽排序
@@ -608,6 +686,7 @@ class SwipeStateManager {
 
     _currentDraggingComponent?.endDrag();
     _currentDraggingComponent = null;
+    _dragGestureCandidates.clear();
     clearSelection();
   }
 

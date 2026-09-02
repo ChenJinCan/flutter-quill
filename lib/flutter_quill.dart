@@ -28,6 +28,8 @@ export 'src/editor/widgets/cursor.dart';
 export 'src/editor/widgets/default_styles.dart';
 export 'src/editor/widgets/link.dart';
 export 'src/editor/widgets/text/drag_aware_scroll_physics.dart';
+export 'src/editor/widgets/text/drag_sort_diagnostics.dart'
+    show QuillDragSortDiagnostics;
 export 'src/editor/widgets/text/magnifier.dart';
 export 'src/editor/widgets/text/swipe_manager.dart'
     show SwipeDirection, SwipeableComponent, SwipeStateManager;

@@ -30,6 +30,7 @@ import '../widgets/cursor.dart';
 import '../widgets/default_styles.dart';
 import '../widgets/link.dart';
 import '../widgets/proxy.dart';
+import '../widgets/text/drag_sort_diagnostics.dart';
 import '../widgets/text/drag_sort_overlay.dart' show DragSortOverlay;
 import '../widgets/text/swipe_manager.dart' show SwipeStateManager;
 import '../widgets/text/text_block.dart';
@@ -938,16 +939,15 @@ class QuillRawEditorState extends EditorState
 
     swipeManager.setDragCallbacks(
       onDragStart: () {
-        debugPrint('拖拽开始回调被触发');
+        QuillDragSortDiagnostics.event(
+          phase: 'drag_manager_start',
+          result: 'success',
+        );
         // 移除自动隐藏，让拖拽更新时再显示
       },
       onDragUpdate: (globalPosition, draggingComponent) {
-        debugPrint(
-            '拖拽更新回调被触发: $globalPosition, component=${draggingComponent.componentId}');
-
         // 确保拖拽覆盖层总是显示
         if (!DragSortOverlay.isVisible && mounted && context.mounted) {
-          debugPrint('显示拖拽覆盖层');
           try {
             DragSortOverlay.show(
               context: context,
@@ -957,20 +957,24 @@ class QuillRawEditorState extends EditorState
               initialGlobalPosition: globalPosition,
               scrollController: _scrollController,
             );
-            debugPrint('拖拽覆盖层显示成功: isVisible=${DragSortOverlay.isVisible}');
           } catch (e) {
-            debugPrint('显示拖拽覆盖层失败: $e');
+            QuillDragSortDiagnostics.event(
+              phase: 'overlay_show',
+              result: 'failure',
+              reason: 'exception_${e.runtimeType}',
+            );
           }
-        } else {
-          debugPrint(
-              '拖拽覆盖层状态: isVisible=${DragSortOverlay.isVisible}, mounted=$mounted, context.mounted=${context.mounted}');
         }
 
         // 无论如何都尝试更新位置
         if (DragSortOverlay.isVisible) {
           DragSortOverlay.updatePosition(globalPosition);
         } else {
-          debugPrint('覆盖层不可见，跳过位置更新');
+          QuillDragSortDiagnostics.event(
+            phase: 'overlay_update',
+            result: 'skipped',
+            reason: 'overlay_not_visible',
+          );
         }
       },
       onDragEnd: (draggingComponent) {
