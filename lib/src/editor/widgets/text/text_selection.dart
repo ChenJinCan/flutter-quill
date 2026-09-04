@@ -214,6 +214,8 @@ class EditorTextSelectionOverlay {
   /// A copy/paste toolbar.
   OverlayEntry? toolbar;
 
+  bool _toolbarHiddenForDrag = false;
+
   TextSelection get _selection => value.selection;
 
   void setHandlesVisible(bool visible) {
@@ -255,11 +257,12 @@ class EditorTextSelectionOverlay {
   void showToolbar() {
     assert(toolbar == null);
     if (contextMenuBuilder == null) return;
+    _toolbarHiddenForDrag = dragOffsetNotifier?.value != null;
     dragOffsetNotifier?.addListener(_dragOffsetListener);
     toolbar = OverlayEntry(builder: (context) {
       // when the dragOffsetNotifier is not null and the value is not null
       // the magnifier is being shown, so we don't want to show the context menu
-      if (dragOffsetNotifier?.value != null) {
+      if (_toolbarHiddenForDrag) {
         return Container();
       }
       return contextMenuBuilder!(context);
@@ -273,11 +276,14 @@ class EditorTextSelectionOverlay {
     }
   }
 
-  // after dragging and magnifier is removed, restore the context menu
+  // Keep the context menu in sync with the selection-handle drag lifecycle.
   void _dragOffsetListener() {
-    if (dragOffsetNotifier?.value == null) {
-      toolbar?.markNeedsBuild();
+    final shouldHideForDrag = dragOffsetNotifier?.value != null;
+    if (_toolbarHiddenForDrag == shouldHideForDrag) {
+      return;
     }
+    _toolbarHiddenForDrag = shouldHideForDrag;
+    toolbar?.markNeedsBuild();
   }
 
   Widget _buildHandle(
