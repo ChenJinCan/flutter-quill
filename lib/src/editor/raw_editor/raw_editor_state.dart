@@ -1233,6 +1233,12 @@ class QuillRawEditorState extends EditorState
   void _onChangeTextEditingValue([bool ignoreCaret = false]) {
     updateRemoteValueIfNeeded();
     if (ignoreCaret) {
+      // Suppressing focus/caret movement must not suppress document rendering.
+      // Commands such as AI apply and undo can change the document while a
+      // toolbar owns focus, without another metrics or focus event to rebuild.
+      if (mounted) {
+        _markNeedsBuild();
+      }
       return;
     }
     if (!renderEditor.isHandleDragging) {
@@ -1298,9 +1304,13 @@ class QuillRawEditorState extends EditorState
 
   void _handleFocusChanged() {
     if (dirty) {
-      requestKeyboard();
-      SchedulerBinding.instance
-          .addPostFrameCallback((_) => _handleFocusChanged());
+      // Wait for current render children without requesting focus again. This
+      // notification can represent focus loss during a suppressed document edit.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _handleFocusChanged();
+        }
+      });
       return;
     }
     openOrCloseConnection();
